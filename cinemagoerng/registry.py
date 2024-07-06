@@ -75,6 +75,9 @@ def set_plot_langs(data):
     episodes = data.get("episodes")
     default_lang = data.get("_page_lang", "en-US")
 
+    if not episodes:
+        return
+
     # Flatten episodes if it's a dictionary of seasons
     if not isinstance(episodes, list):
         episodes = [episode for season in episodes.values() for episode in season.values()]

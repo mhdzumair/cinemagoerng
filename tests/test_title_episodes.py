@@ -272,6 +272,13 @@ def test_updating_episodes_should_accumulate_seasons_with_pagination(imdb_id, ep
                 (2008, 2013, 7, 8, 62),
             ],
         ),
+        (
+                "tt2659152",
+                [  # WWE
+                    (2024, 2024, 0, 0, 0),
+                    (2023, 2023, 1, 1, 1),
+                ],
+        ),
     ],
 )
 def test_updating_episodes_should_accumulate_year_with_pagination(imdb_id, episode_count_data):
