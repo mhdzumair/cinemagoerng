@@ -298,6 +298,16 @@ class TVSpecial(_TimedTitle):
     type_id: Literal["tvSpecial"] = "tvSpecial"
 
 
+@dataclass
+class PodcastEpisode(_TimedTitle):
+    type_id: Literal["podcastEpisode"] = "podcastEpisode"
+
+
+@dataclass
+class PodcastSeries(_TimedTitle):
+    type_id: Literal["podcastSeries"] = "podcastSeries"
+
+
 Title: TypeAlias = (
     Movie
     | TVMovie
@@ -310,4 +320,6 @@ Title: TypeAlias = (
     | TVMiniSeries
     | TVEpisode
     | TVSpecial
+    | PodcastEpisode
+    | PodcastSeries
 )

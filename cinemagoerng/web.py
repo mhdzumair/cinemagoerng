@@ -19,10 +19,12 @@ import json
 from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
-from typing import Literal, Optional, TypeAlias
+from typing import List, Literal, Optional, TypeAlias
 from urllib.error import HTTPError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
+
+from typedload.exceptions import TypedloadValueError
 
 
 try:
@@ -286,3 +288,125 @@ def update_title(
             paginate_result=paginate_result,
             **kwargs,
         )
+
+
+SortOption = Literal[
+    "moviemeter,asc",  # Most Popular
+    "moviemeter,desc",  # Least Popular
+    "alpha,asc",  # A-Z
+    "alpha,desc",  # Z-A
+    "user_rating,desc",  # User Rating (High to Low)
+    "user_rating,asc",  # User Rating (Low to High)
+    "num_votes,desc",  # Number of Ratings (Most to Least)
+    "num_votes,asc",  # Number of Ratings (Least to Most)
+    "boxoffice_gross_us,desc",  # US Box Office (High to Low)
+    "boxoffice_gross_us,asc",  # US Box Office (Low to High)
+    "runtime,desc",  # Runtime (Longest to Shortest)
+    "runtime,asc",  # Runtime (Shortest to Longest)
+    "year,desc",  # Year (Newest to Oldest)
+    "year,asc",  # Year (Oldest to Newest)
+]
+
+
+def search_title(
+    query: str = "",
+    *,
+    title_types: Optional[List[str]] = None,
+    genres: Optional[List[str]] = None,
+    countries: Optional[List[str]] = None,
+    languages: Optional[List[str]] = None,
+    release_date: Optional[tuple[int, int]] = None,
+    user_rating: Optional[tuple[float, float]] = None,
+    min_votes: Optional[int] = None,
+    runtime: Optional[tuple[int, int]] = None,
+    adult: bool = True,
+    sort: SortOption = "moviemeter,asc",
+    count: int = 50,
+    proxy_url: Optional[str] = None,
+) -> List[model.Title]:
+    """
+    Search for titles on IMDb with advanced filtering options.
+
+    Args:
+        query: Search query string
+        title_types: List of title types (e.g., ["movie", "tvSeries"])
+        genres: List of genres (e.g., ["action", "drama"])
+        countries: List of country codes
+        languages: List of language codes
+        release_date: Tuple of (start_year, end_year)
+        user_rating: Tuple of (min_rating, max_rating)
+        min_votes: Minimum number of votes
+        runtime: Tuple of (min_minutes, max_minutes)
+        adult: Include adult titles
+        sort: Sort option
+        count: Number of results per page
+        proxy_url: Optional proxy URL
+
+    Returns:
+        List of Title objects
+    """
+    # Build search parameters
+    params = {
+        "title": query if query else "",
+        "adult": "include" if adult else "exclude",
+        "count": count,
+        "sort": sort,
+    }
+
+    if title_types:
+        params["title_type"] = ",".join(title_types)
+
+    if genres:
+        params["genres"] = ",".join(genres)
+
+    if countries:
+        params["countries"] = ",".join(countries)
+
+    if languages:
+        params["languages"] = ",".join(languages)
+
+    if release_date:
+        start_year, end_year = release_date
+        params["release_date"] = f"{start_year},{end_year}"
+
+    if user_rating:
+        min_rating, max_rating = user_rating
+        params["user_rating"] = f"{min_rating},{max_rating}"
+
+    if min_votes:
+        params["num_votes"] = f"{min_votes},"
+
+    if runtime:
+        min_runtime, max_runtime = runtime
+        params["runtime"] = f"{min_runtime},{max_runtime}"
+
+    # URL encode parameters
+    url_params = urlencode(params)
+
+    # Get search results using the search spec
+    spec = _spec("title_search")
+    document = fetch(
+        spec.url % {"url_params": url_params},
+        proxy_url=proxy_url,
+        doc_type=spec.doctype,
+        url_params=url_params,
+    )
+
+    data = piculet.scrape(
+        document,
+        doctype=spec.doctype,
+        rules=spec.rules,
+        pre=spec.pre,
+        post=spec.post,
+    )
+
+    # Convert each result to a Title object
+    titles = []
+    for result in data.get("results", []):
+        try:
+            title = piculet.deserialize(result, model.Title)
+        except TypedloadValueError:
+            continue
+        titles.append(title)
+
+    return titles

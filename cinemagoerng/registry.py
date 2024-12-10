@@ -325,5 +325,6 @@ def update_transformers(registry: dict[str, Transformer]) -> None:
             "extract_value": extract_value,
             "flatten_list_of_dicts": flatten_list_of_dicts,
             "build_episode_graphql_url": build_episode_graphql_url,
+            "make_default_plot": lambda x: {"en-US": x},
         }
     )

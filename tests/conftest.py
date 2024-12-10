@@ -32,7 +32,7 @@ fetch_orig = cinemagoerng.web.fetch
 
 
 def fetch_cached(
-    url: str, imdb_id: str, page: str, doc_type: str, **kwargs
+    url: str, doc_type: str, imdb_id: str = None, page: str = None, **kwargs
 ) -> str:
     """
     Cached version of fetch that supports proxy configuration from environment.
@@ -47,7 +47,7 @@ def fetch_cached(
         kwargs.pop("proxy_url", None)
 
     # Generate cache key
-    key = f"title_{imdb_id}_{page}"
+    key = f"title_{imdb_id}_{page}" if imdb_id and page else "search"
     # Remove proxy from cache key to ensure same cache for proxy/non-proxy
     extra_args = [f"{k}={v}" for k, v in kwargs.items() if k != "proxy_url"]
     key += "_" + "_".join(extra_args) if extra_args else ""
