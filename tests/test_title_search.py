@@ -232,4 +232,4 @@ def test_paginated_search(query, count, total_count, expected_ids):
 
     # Check if the expected IDs are in the results
     result_ids = [title.imdb_id for title in results]
-    assert all(id in result_ids for id in expected_ids)
+    assert all(imdb_id in result_ids for imdb_id in expected_ids)

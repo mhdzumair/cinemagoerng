@@ -230,7 +230,7 @@ class SearchTitles(Operation[List[model.Title]]):
         """Prepare GraphQL pagination request parameters."""
         extensions = {
             "persistedQuery": {
-                "sha256Hash": "60a7b8470b01671336ffa535b21a0a6cdaf50267fa2ab55b3e3772578a8c1f00",
+                "sha256Hash": "60a7b8470b01671336ffa535b21a0a6cdaf50267fa2ab55b3e3772578a8c1f00",  # noqa: E501
                 "version": 1,
             }
         }

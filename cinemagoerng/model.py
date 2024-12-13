@@ -391,7 +391,8 @@ class SortCriteria:
             "runtime": SortField.RUNTIME,
             "year": SortField.YEAR,
         }
-        # find if the url contain sort criteria then parse it otherwise return default sorting
+        # find if the url contain sort criteria
+        # then parse it otherwise returns default sorting
         if "sort" in url:
             parsed_url = urlparse(url)
             params = parsed_url.query.split("&")
