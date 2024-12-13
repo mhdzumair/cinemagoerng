@@ -20,144 +20,62 @@ from functools import lru_cache
 from http import HTTPStatus
 from pathlib import Path
 from typing import List, Literal, Optional, TypeAlias
-from urllib.error import HTTPError
-from urllib.parse import urlencode, urlparse
-from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
-from typedload.exceptions import TypedloadValueError
-
-
-try:
-    import socks
-    from sockshandler import SocksiPyHandler
-
-    SOCKS_AVAILABLE = True
-except ImportError:
-    SOCKS_AVAILABLE = False
+import httpx
 
 from . import model, piculet, registry
+from .operations import GetTitle, SearchTitles, UpdateTitle
 
 
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Firefox/102.0"
 
 
-def _parse_proxy_url(
-    proxy_url: str,
-) -> tuple[str, str, int, Optional[str], Optional[str]]:
-    """Parse proxy URL into components.
+class HTTPClient:
+    def __init__(self):
+        self.headers = {"User-Agent": _USER_AGENT}
+        self._default_client_params = {
+            "timeout": 30.0,
+            "follow_redirects": True,
+        }
 
-    Args:
-        proxy_url: Proxy URL in format [scheme://][user:pass@]hostname:port
+    def _get_headers(self, url: str) -> dict:
+        headers = self.headers.copy()
+        if "graphql" in url:
+            headers["Content-Type"] = "application/json"
+        return headers
 
-    Returns:
-        Tuple of (proxy_type, host, port, username, password)
+    def _merge_client_params(
+        self, httpx_kwargs: Optional[dict] = None
+    ) -> dict:
+        params = self._default_client_params.copy()
+        if httpx_kwargs:
+            params.update(httpx_kwargs)
+        return params
 
-    Raises:
-        ValueError: If URL format is invalid
-    """
-    parsed = urlparse(proxy_url)
+    async def fetch_async(
+        self, url: str, httpx_kwargs: Optional[dict] = None, **kwargs
+    ) -> str:
+        client_params = self._merge_client_params(httpx_kwargs)
+        async with httpx.AsyncClient(**client_params) as client:
+            response = await client.get(url, headers=self._get_headers(url))
+            response.raise_for_status()
+            return response.text
 
-    # Handle scheme
-    if parsed.scheme:
-        proxy_type = parsed.scheme.lower()
-    else:
-        proxy_type = "http"
-
-    if proxy_type not in ("http", "socks4", "socks5"):
-        raise ValueError(f"Unsupported proxy type: {proxy_type}")
-
-    # Handle auth
-    username = None
-    password = None
-    if "@" in parsed.netloc:
-        auth, host_port = parsed.netloc.split("@", 1)
-        if ":" in auth:
-            username, password = auth.split(":", 1)
-    else:
-        host_port = parsed.netloc
-
-    # Handle host/port
-    if ":" not in host_port:
-        raise ValueError("Proxy URL must include port number")
-
-    host, port_str = host_port.rsplit(":", 1)
-    try:
-        port = int(port_str)
-    except ValueError:
-        raise ValueError(f"Invalid port number: {port_str}")
-
-    return proxy_type, host, port, username, password
+    def fetch(
+        self, url: str, httpx_kwargs: Optional[dict] = None, **kwargs
+    ) -> str:
+        client_params = self._merge_client_params(httpx_kwargs)
+        with httpx.Client(**client_params) as client:
+            response = client.get(url, headers=self._get_headers(url))
+            response.raise_for_status()
+            return response.text
 
 
-def fetch(url: str, proxy_url: Optional[str] = None, **kwargs) -> str:
-    """
-    Fetch content from a URL with optional proxy support.
-
-    Args:
-        url: The URL to fetch
-        proxy_url: Optional proxy URL in format [scheme://][user:pass@]hostname:port
-                  Supported schemes: http, socks4, socks5
-        **kwargs: Additional keyword arguments
-
-    Returns:
-        str: The decoded content from the URL
-
-    Raises:
-        ImportError: If SOCKS proxy is requested but PySocks is not installed
-        ValueError: If invalid proxy configuration is provided
-    """
-    request = Request(url)
-    request.add_header("User-Agent", _USER_AGENT)
-    if "graphql" in url:
-        request.add_header("Content-Type", "application/json")
-
-    opener = None
-    if proxy_url is not None:
-        proxy_type, host, port, username, password = _parse_proxy_url(
-            proxy_url
-        )
-
-        if proxy_type == "http":
-            proxy_dict = {}
-            auth = ""
-            if username and password:
-                auth = f"{username}:{password}@"
-            proxy_url = f"http://{auth}{host}:{port}"
-            proxy_dict = {"http": proxy_url, "https": proxy_url}
-            opener = build_opener(ProxyHandler(proxy_dict))
-        else:  # socks4 or socks5
-            if not SOCKS_AVAILABLE:
-                raise ImportError(
-                    "SOCKS proxy support requires the 'PySocks' package. "
-                    "Install it with: pip install cinemagoerng[socks]"
-                )
-            socks_type = (
-                socks.PROXY_TYPE_SOCKS4
-                if proxy_type == "socks4"
-                else socks.PROXY_TYPE_SOCKS5
-            )
-            opener = build_opener(
-                SocksiPyHandler(
-                    proxytype=socks_type,
-                    proxyaddr=host,
-                    proxyport=port,
-                    username=username,
-                    password=password,
-                )
-            )
-
-    # Use the opener's open method if we have a proxy, otherwise use the default urlopen # noqa: E501
-    url_opener = opener.open if opener is not None else urlopen
-
-    with url_opener(request) as response:
-        content: bytes = response.read()
-    return content.decode("utf-8")
-
+_http_client = HTTPClient()
 
 registry.update_preprocessors(piculet.preprocessors)
 registry.update_postprocessors(piculet.postprocessors)
 registry.update_transformers(piculet.transformers)
-
 
 SPECS_DIR = Path(__file__).parent / "specs"
 
@@ -187,39 +105,46 @@ def get_title(
     imdb_id: str,
     *,
     page: TitlePage = "reference",
-    proxy_url: Optional[str] = None,
+    httpx_kwargs: Optional[dict] = None,
     **kwargs,
 ) -> model.Title | None:
-    spec = _spec(f"title_{page}")
-    url_params = {"imdb_id": imdb_id} | spec.url_default_params | kwargs
-
-    # Apply URL transform if specified
-    if spec.url_transform:
-        url = spec.url_transform.apply({"url": spec.url, "params": url_params})
-    else:
-        url = spec.url % url_params
-
+    """Get title information synchronously."""
+    operation = GetTitle(_http_client.fetch)
     try:
-        document = fetch(
-            url,
-            proxy_url=proxy_url,
+        return operation.execute(
+            _spec(f"title_{page}"),
             imdb_id=imdb_id,
+            httpx_kwargs=httpx_kwargs,
             page=page,
-            doc_type=spec.doctype,
             **kwargs,
         )
-    except HTTPError as e:
-        if e.status == HTTPStatus.NOT_FOUND:
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == HTTPStatus.NOT_FOUND:
             return None
-        raise e  # pragma: no cover
-    data = piculet.scrape(
-        document,
-        doctype=spec.doctype,
-        rules=spec.rules,
-        pre=spec.pre,
-        post=spec.post,
-    )
-    return piculet.deserialize(data, model.Title)
+        raise
+
+
+async def get_title_async(
+    imdb_id: str,
+    *,
+    page: TitlePage = "reference",
+    httpx_kwargs: Optional[dict] = None,
+    **kwargs,
+) -> model.Title | None:
+    """Get title information asynchronously."""
+    operation = GetTitle(_http_client.fetch_async)
+    try:
+        return await operation.execute_async(
+            _spec(f"title_{page}"),
+            imdb_id=imdb_id,
+            httpx_kwargs=httpx_kwargs,
+            page=page,
+            **kwargs,
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == HTTPStatus.NOT_FOUND:
+            return None
+        raise
 
 
 def update_title(
@@ -228,185 +153,116 @@ def update_title(
     *,
     page: TitleUpdatePage,
     keys: list[str],
-    proxy_url: Optional[str] = None,
+    httpx_kwargs: Optional[dict] = None,
     paginate_result: bool = False,
     **kwargs,
 ) -> None:
-    spec = _spec(f"title_{page}")
-    url_params = {"imdb_id": title.imdb_id} | spec.url_default_params | kwargs
-
-    if spec.url_transform:
-        url = spec.url_transform.apply({"url": spec.url, "params": url_params})
-    else:
-        url = spec.url % url_params
-
-    document = fetch(
-        url,
-        proxy_url=proxy_url,
+    """Update title with additional information synchronously."""
+    operation = UpdateTitle(_http_client.fetch, title, keys)
+    operation.execute(
+        _spec(f"title_{page}"),
         imdb_id=title.imdb_id,
+        httpx_kwargs=httpx_kwargs,
         page=page,
-        doc_type=spec.doctype,
+        paginate_result=paginate_result,
         **kwargs,
     )
-    data = piculet.scrape(
-        document,
-        doctype=spec.doctype,
-        rules=spec.rules,
-        pre=spec.pre,
-        post=spec.post,
+
+
+async def update_title_async(
+    title: model.Title,
+    /,
+    *,
+    page: TitleUpdatePage,
+    keys: list[str],
+    httpx_kwargs: Optional[dict] = None,
+    paginate_result: bool = False,
+    **kwargs,
+) -> None:
+    operation = UpdateTitle(_http_client.fetch_async, title, keys)
+    await operation.execute_async(
+        _spec(f"title_{page}"),
+        imdb_id=title.imdb_id,
+        httpx_kwargs=httpx_kwargs,
+        page=page,
+        paginate_result=paginate_result,
+        **kwargs,
     )
-    for key in keys:
-        value = data.get(key)
-        if value is None:
-            continue
-        if key == "episodes":
-            if isinstance(value, dict):
-                value = piculet.deserialize(value, model.EpisodeMap)
-                title.episodes.update(value)
-            else:
-                value = piculet.deserialize(value, list[model.TVEpisode])
-                title.add_episodes(value)
-        elif key == "akas":
-            value = [piculet.deserialize(aka, model.AKA) for aka in value]
-            title.akas.extend(value)
-        elif key == "certification":
-            value = piculet.deserialize(value, model.Certification)
-            setattr(title, key, value)
-        elif key == "advisories":
-            value = piculet.deserialize(value, model.Advisories)
-            setattr(title, key, value)
-        else:
-            setattr(title, key, value)
-
-    if paginate_result and data.get("has_next_page", False):
-        kwargs["after"] = f'"{data["end_cursor"]}"'
-        update_title(
-            title,
-            page=page,
-            keys=keys,
-            proxy_url=proxy_url,
-            paginate_result=paginate_result,
-            **kwargs,
-        )
 
 
-SortOption = Literal[
-    "moviemeter,asc",  # Most Popular
-    "moviemeter,desc",  # Least Popular
-    "alpha,asc",  # A-Z
-    "alpha,desc",  # Z-A
-    "user_rating,desc",  # User Rating (High to Low)
-    "user_rating,asc",  # User Rating (Low to High)
-    "num_votes,desc",  # Number of Ratings (Most to Least)
-    "num_votes,asc",  # Number of Ratings (Least to Most)
-    "boxoffice_gross_us,desc",  # US Box Office (High to Low)
-    "boxoffice_gross_us,asc",  # US Box Office (Low to High)
-    "runtime,desc",  # Runtime (Longest to Shortest)
-    "runtime,asc",  # Runtime (Shortest to Longest)
-    "year,desc",  # Year (Newest to Oldest)
-    "year,asc",  # Year (Oldest to Newest)
-]
-
-
-def search_title(
+def search_titles(
     query: str = "",
     *,
-    title_types: Optional[List[str]] = None,
-    genres: Optional[List[str]] = None,
-    countries: Optional[List[str]] = None,
-    languages: Optional[List[str]] = None,
-    release_date: Optional[tuple[int, int]] = None,
-    user_rating: Optional[tuple[float, float]] = None,
-    min_votes: Optional[int] = None,
-    runtime: Optional[tuple[int, int]] = None,
-    adult: bool = True,
-    sort: SortOption = "moviemeter,asc",
+    filters: Optional[model.SearchFilters] = None,
+    sort: model.SortCriteria = model.SortCriteria(model.SortField.POPULARITY),
+    httpx_kwargs: Optional[dict] = None,
     count: int = 50,
-    proxy_url: Optional[str] = None,
+    total_count: Optional[int] = 250,
+    paginate: bool = False,
 ) -> List[model.Title]:
     """
     Search for titles on IMDb with advanced filtering options.
 
     Args:
         query: Search query string
-        title_types: List of title types (e.g., ["movie", "tvSeries"])
-        genres: List of genres (e.g., ["action", "drama"])
-        countries: List of country codes
-        languages: List of language codes
-        release_date: Tuple of (start_year, end_year)
-        user_rating: Tuple of (min_rating, max_rating)
-        min_votes: Minimum number of votes
-        runtime: Tuple of (min_minutes, max_minutes)
-        adult: Include adult titles
-        sort: Sort option
-        count: Number of results per page
-        proxy_url: Optional proxy URL
+        filters: Search filters including title types, genres, etc.
+        sort: Sort criteria for results
+        httpx_kwargs: Optional HTTPX client parameters
+        count: Maximum number of items to fetch in a single request
+        total_count: Total number of items to fetch
+        paginate: Whether to fetch all pages of results
 
     Returns:
         List of Title objects
     """
-    # Build search parameters
-    params = {
-        "title": query if query else "",
-        "adult": "include" if adult else "exclude",
-        "count": count,
-        "sort": sort,
-    }
-
-    if title_types:
-        params["title_type"] = ",".join(title_types)
-
-    if genres:
-        params["genres"] = ",".join(genres)
-
-    if countries:
-        params["countries"] = ",".join(countries)
-
-    if languages:
-        params["languages"] = ",".join(languages)
-
-    if release_date:
-        start_year, end_year = release_date
-        params["release_date"] = f"{start_year},{end_year}"
-
-    if user_rating:
-        min_rating, max_rating = user_rating
-        params["user_rating"] = f"{min_rating},{max_rating}"
-
-    if min_votes:
-        params["num_votes"] = f"{min_votes},"
-
-    if runtime:
-        min_runtime, max_runtime = runtime
-        params["runtime"] = f"{min_runtime},{max_runtime}"
-
-    # URL encode parameters
-    url_params = urlencode(params)
-
-    # Get search results using the search spec
-    spec = _spec("title_search")
-    document = fetch(
-        spec.url % {"url_params": url_params},
-        proxy_url=proxy_url,
-        doc_type=spec.doctype,
-        url_params=url_params,
+    operation = SearchTitles(
+        _http_client.fetch, paginate=paginate, target_count=total_count
+    )
+    return operation.execute(
+        _spec("title_search"),
+        query=query,
+        filters=filters,
+        sort=sort,
+        httpx_kwargs=httpx_kwargs,
+        count=min(count, 100),
+        pagination_spec=_spec("title_search_with_pagination"),
     )
 
-    data = piculet.scrape(
-        document,
-        doctype=spec.doctype,
-        rules=spec.rules,
-        pre=spec.pre,
-        post=spec.post,
+
+async def search_titles_async(
+    query: str = "",
+    *,
+    filters: Optional[model.SearchFilters] = None,
+    sort: model.SortCriteria = model.SortCriteria(model.SortField.POPULARITY),
+    httpx_kwargs: Optional[dict] = None,
+    count: int = 50,
+    total_count: Optional[int] = 250,
+    paginate: bool = False,
+) -> List[model.Title]:
+    """
+    Asynchronous Search for titles on IMDb with advanced filtering options.
+
+    Args:
+        query: Search query string
+        filters: Search filters including title types, genres, etc.
+        sort: Sort criteria for results
+        httpx_kwargs: Optional HTTPX client parameters
+        count: Maximum number of items to fetch in a single request
+        total_count: Total number of items to fetch
+        paginate: Whether to fetch all pages of results
+
+    Returns:
+        List of Title objects
+    """
+    operation = SearchTitles(
+        _http_client.fetch_async, paginate=paginate, target_count=total_count
     )
-
-    # Convert each result to a Title object
-    titles = []
-    for result in data.get("results", []):
-        try:
-            title = piculet.deserialize(result, model.Title)
-        except TypedloadValueError:
-            continue
-        titles.append(title)
-
-    return titles
+    return await operation.execute_async(
+        _spec("title_search"),
+        query=query,
+        filters=filters,
+        sort=sort,
+        httpx_kwargs=httpx_kwargs,
+        count=min(count, 100),
+        pagination_spec=_spec("title_search_with_pagination"),
+    )

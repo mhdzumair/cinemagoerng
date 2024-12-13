@@ -9,11 +9,12 @@ CinemagoerNG (Next Generation) is a Python library and command-line utility for 
 
 ## Features
 
+- Advanced search capabilities with multiple filters and sorting options
 - Retrieve comprehensive movie and TV show information
 - Support for alternate titles (AKAs)
 - Taglines and parental guide information
 - Episode data for TV series
-- Proxy support (HTTP/SOCKS4/SOCKS5)
+- Synchronous and Asynchronous support for all operations
 - Modern Python typing support
 - Clean, intuitive API
 
@@ -22,29 +23,72 @@ CinemagoerNG (Next Generation) is a Python library and command-line utility for 
 You can install CinemagoerNG using pip:
 
 ```bash
-# Basic installation
 pip install cinemagoerng
-
-# With proxy support (for SOCKS proxies)
-pip install cinemagoerng[socks]
-
-# For development
-pip install cinemagoerng[dev]
 ```
 
 ## Basic Usage
 
-Here's a simple example of retrieving movie information:
+### Searching for Titles
+
+The most common way to find titles is using the search functionality:
 
 ```python
 from cinemagoerng import web
+from cinemagoerng.model import SearchFilters, RangeFilter, SortCriteria, SortField, SortOrder
 
+# Basic search
+titles = web.search_titles("The Matrix")
+for title in titles:
+    print(f"{title.title} ({title.year}) - {title.type_id}")
+
+# Using async search
+titles = await web.search_titles_async("The Matrix")
+    
+# Advanced search with filters
+filters = SearchFilters(
+    title_types=["movie"],
+    genres=["action", "sci-fi"],
+    release_date=RangeFilter(           # Between 1990 and 2022
+        min_value="1990-01-01",
+        max_value="2022"
+    ),
+    user_rating=RangeFilter(min_value=7.0),  # 7.0 or higher
+    votes=RangeFilter(min_value=10000),      # At least 10000 votes
+    runtime=RangeFilter(                      # Between 90 and 180 minutes
+        min_value=90,
+        max_value=180
+    ),
+    adult=False
+)
+
+sort = SortCriteria(
+    field=SortField.USER_RATING,
+    order=SortOrder.DESCENDING
+)
+
+titles = web.search_titles(
+    "Matrix",
+    filters=filters,
+    sort=sort,
+    count=50,
+    paginate=True
+)
+```
+
+### Retrieving Title Details
+
+Once you have a title ID or have found a title through search, you can get detailed information:
+
+```python
 # Get basic movie information
 movie = web.get_title("tt0133093")  # The Matrix
 print(movie.title)       # "The Matrix"
 print(movie.sort_title)  # "Matrix"
 print(movie.year)        # 1999
 print(movie.runtime)     # 136
+
+# Async Usage
+movie = await web.get_title_async("tt0133093")
 
 # Access movie genres
 for genre in movie.genres:
@@ -65,35 +109,44 @@ web.update_title(movie, page="taglines", keys=["taglines"])
 for tagline in movie.taglines:
     print(tagline)
 
+# Async Usage
+await web.update_title_async(movie, page="taglines", keys=["taglines"])
+
 # Get alternate titles (AKAs)
 web.update_title(movie, page="akas", keys=["akas"])
 for aka in movie.akas:
     print(f"{aka.title} ({aka.country})")
+
+# Get parental guide information
+web.update_title(movie, page="parental_guide", keys=["certification", "advisories"])
+print(f"MPAA Rating: {movie.certification.mpa_rating}")
+print(f"Reason: {movie.certification.mpa_rating_reason}")
 ```
 
-### Using Proxies
+### Configuring HTTPX Parameters
 
-CinemagoerNG supports HTTP and SOCKS proxies for accessing IMDb. To use this feature, first install with proxy support:
-
-```bash
-pip install cinemagoerng[proxy]
-```
-
-Then you can use proxies in your code:
+CinemagoerNG uses HTTPX for making HTTP requests. You can customize the HTTPX client configuration by passing parameters:
 
 ```python
 # Using HTTP proxy
-movie = web.get_title("tt0133093", proxy_url="http://proxy.example.com:8080")
+movie = web.get_title("tt0133093", httpx_kwargs={"proxy": "http://proxy.example.com:8080"})
 
-# Using SOCKS5 proxy
-movie = web.get_title("tt0133093", proxy_url="socks5://127.0.0.1:1080")
+# Using SOCKS5 proxy (requires httpx[socks] extra)
+movie = web.get_title("tt0133093", httpx_kwargs={"proxy": "socks5://127.0.0.1:1080"})
 
-# Using authenticated proxy
-movie = web.get_title("tt0133093", proxy_url="http://user:pass@proxy.example.com:8080")
+# Configuring timeout and other parameters
+movie = web.get_title("tt0133093", httpx_kwargs={
+    "timeout": 60.0,
+    "proxy": "http://proxy.example.com:8080",
+    "follow_redirects": False
+})
 
-# Update with proxy
+# Using with search
+titles = web.search_titles("The Matrix", httpx_kwargs={"proxy": "socks5://127.0.0.1:1080"})
+
+# Using with update
 web.update_title(movie, page="episodes", keys=["episodes"], 
-                proxy_url="socks5://127.0.0.1:1080")
+                httpx_kwargs={"timeout": 60.0})
 ```
 
 ## Available Data
@@ -123,6 +176,11 @@ CinemagoerNG can retrieve various types of information:
 - Parental guide
 - Reference information
 
+## Advanced Usage Examples
+
+For comprehensive examples of how to use CinemagoerNG's features, check out our test files in the [tests](tests) directory.
+
+
 ## Development
 
 To set up for development:
@@ -134,9 +192,6 @@ cd cinemagoerng
 
 # Install development dependencies
 pip install -e .[dev]
-
-# Install socks dependencies (optional)
-pip install -e .[socks]
 
 # Install pre-commit hooks
 pre-commit install

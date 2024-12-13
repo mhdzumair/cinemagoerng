@@ -1,98 +1,97 @@
 {
-  "version": "20240526",
-  "url": "https://www.imdb.com/search/title/?%(url_params)s",
-  "doctype": "html",
+  "version": "20240703",
+  "url": "https://caching.graphql.imdb.com/?operationName=AdvancedTitleSearch&variables=%(variables)s&extensions=%(extensions)s",
+  "doctype": "json",
   "path_type": "jmespath",
-  "pre": ["parse_next_data"],
   "rules": [
     {
       "key": "results",
       "extractor": {
-        "foreach": "props.pageProps.searchResults.titleResults.titleListItems[*]",
+        "foreach": "data.advancedTitleSearch.edges[*]",
         "rules": [
           {
             "key": "imdb_id",
             "extractor": {
-              "path": "titleId"
+              "path": "node.title.id"
             }
           },
           {
             "key": "type_id",
             "extractor": {
-              "path": "titleType.id"
+              "path": "node.title.titleType.id"
             }
           },
           {
             "key": "title",
             "extractor": {
-              "path": "titleText"
+              "path": "node.title.titleText.text"
             }
           },
           {
             "key": "year",
             "extractor": {
-              "path": "releaseYear"
+              "path": "node.title.releaseYear.year"
             }
           },
           {
             "key": "end_year",
             "extractor": {
-              "path": "endYear"
+              "path": "node.title.releaseYear.endYear"
             }
           },
           {
             "key": "runtime",
             "extractor": {
-              "path": "runtime",
+              "path": "node.title.runtime.seconds",
               "transforms": ["div60"]
             }
           },
           {
             "key": "genres",
             "extractor": {
-              "path": "genres"
+              "path": "node.title.genres[*].genre.text"
             }
           },
           {
             "key": "rating",
             "extractor": {
-              "path": "ratingSummary.aggregateRating",
+              "path": "node.title.ratingsSummary.aggregateRating",
               "transforms": ["decimal"]
             }
           },
           {
             "key": "vote_count",
             "extractor": {
-              "path": "ratingSummary.voteCount"
+              "path": "node.title.ratingsSummary.voteCount"
             }
           },
           {
             "key": "plot",
             "extractor": {
-              "path": "plot",
+              "path": "node.title.plot.plotText.plainText",
               "transforms": ["make_default_plot"]
             }
           },
           {
             "key": "primary_image",
             "extractor": {
-              "path": "primaryImage.url"
+              "path": "node.title.primaryImage.url"
             }
           }
         ]
       }
     },
-    {
-      "key": "end_cursor",
-      "extractor": {
-        "path": "props.pageProps.searchResults.titleResults.endCursor"
-      }
-    },
-    {
-      "key": "total_results",
-      "extractor": {
-        "path": "props.pageProps.searchResults.titleResults.total"
-      }
-    }
+	{
+	  "key": "has_next_page",
+	  "extractor": {
+		"path": "data.advancedTitleSearch.pageInfo.hasNextPage"
+	  }
+	},
+	{
+	  "key": "end_cursor",
+	  "extractor": {
+		"path": "data.advancedTitleSearch.pageInfo.endCursor"
+	  }
+	}
   ]
 }

@@ -20,7 +20,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Literal, TypeAlias, Union
+from enum import Enum, auto
+from typing import Any, List, Literal, Optional, TypeAlias, Union
+from urllib.parse import urlparse
 
 from . import linguistics, lookup
 
@@ -323,3 +325,251 @@ Title: TypeAlias = (
     | PodcastEpisode
     | PodcastSeries
 )
+
+
+class SortField(Enum):
+    """Available fields for sorting search results."""
+
+    POPULARITY = auto()
+    ALPHABETICAL = auto()
+    USER_RATING = auto()
+    NUM_VOTES = auto()
+    BOX_OFFICE = auto()
+    RUNTIME = auto()
+    YEAR = auto()
+
+
+class SortOrder(Enum):
+    """Sort order for search results."""
+
+    ASCENDING = "ASC"
+    DESCENDING = "DESC"
+
+
+@dataclass
+class SortCriteria:
+    """Criteria for sorting search results."""
+
+    field: SortField
+    order: SortOrder = SortOrder.ASCENDING
+
+    def to_url_param(self) -> str:
+        """Convert to IMDb URL parameter format."""
+        field_map = {
+            SortField.POPULARITY: "moviemeter",
+            SortField.ALPHABETICAL: "alpha",
+            SortField.USER_RATING: "user_rating",
+            SortField.NUM_VOTES: "num_votes",
+            SortField.BOX_OFFICE: "boxoffice_gross_us",
+            SortField.RUNTIME: "runtime",
+            SortField.YEAR: "year",
+        }
+        return f"{field_map[self.field]},{self.order.value.lower()}"
+
+    def to_graphql_params(self) -> tuple[str, str]:
+        """Convert to GraphQL parameter format."""
+        field_map = {
+            SortField.POPULARITY: "POPULARITY",
+            SortField.ALPHABETICAL: "ALPHA",
+            SortField.USER_RATING: "USER_RATING",
+            SortField.NUM_VOTES: "NUM_VOTES",
+            SortField.BOX_OFFICE: "BOX_OFFICE",
+            SortField.RUNTIME: "RUNTIME",
+            SortField.YEAR: "YEAR",
+        }
+        return field_map[self.field], self.order.value
+
+    @staticmethod
+    def from_url(url: str) -> SortCriteria:
+        """Parse IMDb URL parameter string to SortCriteria."""
+        field_map = {
+            "moviemeter": SortField.POPULARITY,
+            "alpha": SortField.ALPHABETICAL,
+            "user_rating": SortField.USER_RATING,
+            "num_votes": SortField.NUM_VOTES,
+            "boxoffice_gross_us": SortField.BOX_OFFICE,
+            "runtime": SortField.RUNTIME,
+            "year": SortField.YEAR,
+        }
+        # find if the url contain sort criteria then parse it otherwise return default sorting
+        if "sort" in url:
+            parsed_url = urlparse(url)
+            params = parsed_url.query.split("&")
+            for param in params:
+                if "sort=" in param:
+                    field, order = param.split("=")[1].split(",")
+                    return SortCriteria(
+                        field_map[field], SortOrder(order.upper())
+                    )
+        return SortCriteria(SortField.POPULARITY)
+
+
+@dataclass
+class RangeFilter[T: Union[int, float, str]]:
+    """Generic range filter for numeric or str values."""
+
+    min_value: Optional[T] = None
+    max_value: Optional[T] = None
+
+    def to_param_string(self) -> str:
+        """Convert range to IMDb parameter string format."""
+        if self.min_value is None and self.max_value is None:
+            return ""
+        return f"{self.min_value or ''},{self.max_value or ''}"
+
+
+@dataclass
+class SearchFilters:
+    """Container for all search filter criteria."""
+
+    title_types: Optional[List[str]] = None
+    genres: Optional[List[str]] = None
+    countries: Optional[List[str]] = None
+    languages: Optional[List[str]] = None
+    release_date: Optional[RangeFilter[str]] = None
+    user_rating: Optional[RangeFilter[float]] = None
+    votes: Optional[RangeFilter[int]] = None
+    runtime: Optional[RangeFilter[int]] = None
+    adult: bool = True
+
+    def to_url_params(self) -> dict[str, str]:
+        """Convert filters to URL parameters."""
+        params = {"adult": "include" if self.adult else "exclude"}
+
+        if self.title_types:
+            params["title_type"] = ",".join(self.title_types)
+        if self.genres:
+            params["genres"] = ",".join(self.genres)
+        if self.countries:
+            params["countries"] = ",".join(self.countries)
+        if self.languages:
+            params["languages"] = ",".join(self.languages)
+
+        if self.release_date:
+            date_param = self.release_date.to_param_string()
+            if date_param:
+                params["release_date"] = date_param
+
+        if self.user_rating:
+            rating_param = self.user_rating.to_param_string()
+            if rating_param:
+                params["user_rating"] = rating_param
+
+        if self.votes:
+            votes_param = self.votes.to_param_string()
+            if votes_param:
+                params["num_votes"] = votes_param
+
+        if self.runtime:
+            runtime_param = self.runtime.to_param_string()
+            if runtime_param:
+                params["runtime"] = runtime_param
+
+        return params
+
+    def to_graphql_variables(self) -> dict[str, Any]:
+        """Convert filters to GraphQL variables."""
+        variables: dict[str, Any] = {
+            "explicitContentConstraint": {
+                "explicitContentFilter": "INCLUDE_ADULT"
+                if self.adult
+                else "EXCLUDE_ADULT"
+            }
+        }
+
+        if self.title_types:
+            variables["titleTypeConstraint"] = {
+                "anyTitleTypeIds": self.title_types,
+                "excludeTitleTypeIds": [],
+            }
+
+        if self.genres:
+            variables["genreConstraint"] = {"allGenreIds": self.genres}
+
+        if self.countries:
+            variables["originCountryConstraint"] = {
+                "allCountries": self.countries
+            }
+
+        if self.languages:
+            variables["languageConstraint"] = {"allLanguages": self.languages}
+
+        if self.release_date:
+            date_range = {}
+            if self.release_date.min_value:
+                date_range["start"] = self.release_date.min_value
+            if self.release_date.max_value:
+                date_range["end"] = self.release_date.max_value
+            if date_range:
+                variables["releaseDateConstraint"] = {
+                    "releaseDateRange": date_range
+                }
+
+        if self.user_rating:
+            rating_range = {}
+            if self.user_rating.min_value is not None:
+                rating_range["min"] = self.user_rating.min_value
+            if self.user_rating.max_value is not None:
+                rating_range["max"] = self.user_rating.max_value
+            if rating_range:
+                variables["userRatingConstraint"] = {
+                    "aggregateRatingRange": rating_range
+                }
+
+        if self.votes:
+            votes_range = {}
+            if self.votes.min_value is not None:
+                votes_range["min"] = self.votes.min_value
+            if self.votes.max_value is not None:
+                votes_range["max"] = self.votes.max_value
+            if votes_range:
+                variables["ratingsCountRange"] = votes_range
+
+        if self.runtime:
+            runtime_range = {}
+            if self.runtime.min_value is not None:
+                runtime_range["min"] = self.runtime.min_value
+            if self.runtime.max_value is not None:
+                runtime_range["max"] = self.runtime.max_value
+            if runtime_range:
+                variables["runtimeConstraint"] = {
+                    "runtimeRangeMinutes": runtime_range
+                }
+
+        return variables
+
+    @staticmethod
+    def from_url(url: str) -> SearchFilters:
+        """Parse IMDb URL parameters to SearchFilters."""
+        parsed_url = urlparse(url)
+        params = parsed_url.query.split("&")
+        filters = SearchFilters()
+        for param in params:
+            key, value = param.split("=")
+            if key == "adult":
+                filters.adult = value == "include"
+            elif key == "title_type":
+                filters.title_types = value.split(",")
+            elif key == "genres":
+                filters.genres = value.split(",")
+            elif key == "countries":
+                filters.countries = value.split(",")
+            elif key == "languages":
+                filters.languages = value.split(",")
+            elif key == "release_date":
+                min_date, max_date = value.split(",")
+                filters.release_date = RangeFilter(min_date, max_date)
+            elif key == "user_rating":
+                min_rating, max_rating = value.split(",")
+                filters.user_rating = RangeFilter(
+                    float(min_rating), float(max_rating)
+                )
+            elif key == "num_votes":
+                min_votes, max_votes = value.split(",")
+                filters.votes = RangeFilter(int(min_votes), int(max_votes))
+            elif key == "runtime":
+                min_runtime, max_runtime = value.split(",")
+                filters.runtime = RangeFilter(
+                    int(min_runtime), int(max_runtime)
+                )
+        return filters

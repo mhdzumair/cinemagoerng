@@ -1,6 +1,13 @@
 import pytest
 
 from cinemagoerng import web
+from cinemagoerng.model import (
+    RangeFilter,
+    SearchFilters,
+    SortCriteria,
+    SortField,
+    SortOrder,
+)
 
 
 @pytest.mark.parametrize(
@@ -40,7 +47,9 @@ def test_basic_search(
     expected_year,
     expected_type,
 ):
-    results = web.search_title(query=query, title_types=title_types)
+    results = web.search_titles(
+        query=query, filters=SearchFilters(title_types=title_types), count=3
+    )
 
     # Verify we got results
     assert results
@@ -71,7 +80,7 @@ def test_basic_search(
         (
             "Matrix",
             ["sci_fi", "action"],
-            (1999, 1999),
+            ("1999", "1999"),
             100000,
             1,
             ["Sci-Fi", "Action"],
@@ -79,7 +88,7 @@ def test_basic_search(
         (
             "Lord of the Rings",
             ["adventure", "fantasy"],
-            (2001, 2003),
+            ("2001", "2003"),
             100000,
             3,
             ["Adventure", "Fantasy"],
@@ -89,18 +98,22 @@ def test_basic_search(
 def test_advanced_search(
     query, genres, release_date, min_votes, expected_count, expected_genres
 ):
-    results = web.search_title(
+    results = web.search_titles(
         query=query,
-        genres=genres,
-        release_date=release_date,
-        min_votes=min_votes,
+        filters=SearchFilters(
+            genres=genres,
+            release_date=RangeFilter(
+                min_value=release_date[0], max_value=release_date[1]
+            ),
+            votes=RangeFilter(min_value=min_votes),
+        ),
     )
 
     # Verify number of results matches expectation
     matching_results = [
         title
         for title in results
-        if (release_date[0] <= title.year <= release_date[1])
+        if (int(release_date[0]) <= title.year <= int(release_date[1]))
         and all(genre in title.genres for genre in expected_genres)
         and title.vote_count >= min_votes
     ]
@@ -113,12 +126,12 @@ def test_advanced_search(
     [
         (
             "Star Wars",
-            "year,asc",
+            SortCriteria(field=SortField.YEAR, order=SortOrder.ASCENDING),
             ["tt0076759", "tt0080684", "tt0086190"],  # Episode IV, V, VI
         ),
         (
             "Lord of the Rings",
-            "year,desc",
+            SortCriteria(field=SortField.YEAR, order=SortOrder.DESCENDING),
             [
                 "tt32328070",
                 "tt32869251",
@@ -128,7 +141,7 @@ def test_advanced_search(
     ],
 )
 def test_search_sorting(query, sort, expected_order):
-    results = web.search_title(query=query, sort=sort)
+    results = web.search_titles(query=query, sort=sort)
 
     # Get the IDs of matching titles in the order they appear
     result_ids = [
@@ -140,20 +153,24 @@ def test_search_sorting(query, sort, expected_order):
 
 
 def test_empty_search():
-    results = web.search_title()
+    results = web.search_titles(filters=SearchFilters(), count=3)
     assert isinstance(results, list)
     assert len(results) > 0
 
 
 def test_search_with_invalid_parameters():
     # Should handle invalid genre gracefully
-    results = web.search_title(query="Matrix", genres=["nonexistent_genre"])
+    results = web.search_titles(
+        query="Matrix", filters=SearchFilters(genres=["nonexistent_genre"])
+    )
     assert isinstance(results, list)
 
     # Should handle invalid date range gracefully
-    results = web.search_title(
+    results = web.search_titles(
         query="Matrix",
-        release_date=(2025, 2024),  # Invalid range
+        filters=SearchFilters(
+            release_date=RangeFilter(min_value="2025", max_value="2024")
+        ),  # Invalid range
     )
     assert isinstance(results, list)
 
@@ -168,16 +185,51 @@ def test_search_with_invalid_parameters():
 def test_search_language_country(
     query, languages, countries, expected_lang, expected_country
 ):
-    results = web.search_title(
-        query=query, languages=languages, countries=countries
+    results = web.search_titles(
+        query=query,
+        filters=SearchFilters(languages=languages, countries=countries),
     )
 
     assert results
     title = results[0]
 
     # Update the title with additional information
-    web.update_title(title, page="main", keys=["language_codes", "country_codes"])
+    web.update_title(
+        title, page="main", keys=["language_codes", "country_codes"]
+    )
 
     # Check if the expected language and country are in the results
     assert expected_lang in title.languages
     assert expected_country in title.countries
+
+
+@pytest.mark.parametrize(
+    ("query", "count", "total_count", "expected_ids"),
+    [
+        (
+            "Matrix",
+            1,
+            4,  # Total results
+            ["tt0133093", "tt10838180", "tt0234215"],
+        ),
+        (
+            "Lord of the Rings",
+            2,
+            6,  # Total results
+            ["tt14824600", "tt7631058", "tt0167260"],
+        ),
+    ],
+)
+def test_paginated_search(query, count, total_count, expected_ids):
+    results = web.search_titles(
+        query=query,
+        count=count,
+        total_count=total_count,
+        paginate=True,
+    )
+
+    assert len(results) == total_count
+
+    # Check if the expected IDs are in the results
+    result_ids = [title.imdb_id for title in results]
+    assert all(id in result_ids for id in expected_ids)
