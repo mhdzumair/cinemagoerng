@@ -3,181 +3,185 @@
   "url": "https://www.imdb.com/title/%(imdb_id)s/parentalguide",
   "doctype": "html",
   "path_type": "jmespath",
-  "pre": ["parse_next_data"],
+  "pre": [
+	"parse_next_data"
+  ],
   "rules": [
-    {
-      "key": "imdb_id",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.id"
-      }
-    },
-    {
-      "key": "type_id",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.titleType.id"
-      }
-    },
-    {
-      "key": "title",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.originalTitleText.text"
-      }
-    },
-    {
-      "key": "primary_image",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.primaryImage.url"
-      }
-    },
-    {
-      "key": "year",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.releaseYear.year"
-      }
-    },
-    {
-      "key": "end_year",
-      "extractor": {
-        "path": "props.pageProps.contentData.entityMetadata.releaseYear.endYear"
-      }
-    },
-    {
-      "key": "genres",
-      "extractor": {
-        "foreach": "props.pageProps.contentData.entityMetadata.titleGenres.genres[*].genre",
-        "path": "text"
-      }
-    },
-    {
-      "key": "runtime",
-        "extractor": {
-		  "path": "props.pageProps.contentData.entityMetadata.runtime.seconds",
-		  "transforms": ["div60"]
-        }
-    },
-    {
-      "key": "certification",
-      "extractor": {
-        "rules": [
-          {
-            "key": "mpa_rating",
-            "extractor": {
-              "path": "props.pageProps.contentData.entityMetadata.certificate.rating"
-            }
-          },
-          {
-            "key": "mpa_rating_reason",
-            "extractor": {
-              "path": "props.pageProps.contentData.contentRatingData.ratingReason"
-            }
-          },
-          {
-            "key": "certificates",
-            "extractor": {
-              "foreach": "props.pageProps.contentData.certificates[*]",
-              "rules": [
-                {
-                  "key": "country",
-                  "extractor": {
-                    "path": "country"
-                  }
-                },
-                {
-                  "key": "ratings",
-                  "extractor": {
-                    "path": "ratings[*].rating"
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "key": "advisories",
-      "transforms": [
-        "flatten_list_of_dicts"
-      ],
-      "extractor": {
-        "foreach": "props.pageProps.contentData.categories[*]",
-        "transforms": [
-          "make_dict"
-        ],
-        "rules": [
-          {
-            "key": "key",
-            "extractor": {
-              "path": "id",
-              "transforms": [
-                  "lower"
-              ]
-            }
-          },
-          {
-            "key": "value",
-            "extractor": {
-              "rules": [
-                {
-                  "key": "details",
-                  "extractor": {
-                    "foreach": "items[*]",
-                    "rules": [
-                      {
-                        "key": "text",
-                        "extractor": {
-                          "path": "text"
-                        }
-                      },
-                      {
-                        "key": "is_spoiler",
-                        "extractor": {
-                          "path": "isSpoiler"
-                        }
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": "status",
-                  "extractor": {
-                    "path": "severitySummary.text"
-                  }
-                },
-                {
-                  "key": "votes",
-                  "transforms": [
-                    "flatten_list_of_dicts"
-                  ],
-                  "extractor": {
-                    "foreach": "severityBreakdown[*]",
-                    "transforms": [
-                      "make_dict"
-                    ],
-                    "rules": [
-                      {
-                        "key": "key",
-                        "extractor": {
-                          "path": "text",
-                          "transforms": [
-                              "lower"
-                          ]
-                        }
-                      },
-                      {
-                        "key": "value",
-                        "extractor": {
-                          "path": "votes"
-                        }
-                      }
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-    }
+	{
+	  "key": "imdb_id",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.id"
+	  }
+	},
+	{
+	  "key": "type_id",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.titleType.id"
+	  }
+	},
+	{
+	  "key": "title",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.originalTitleText.text"
+	  }
+	},
+	{
+	  "key": "primary_image",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.primaryImage.url"
+	  }
+	},
+	{
+	  "key": "year",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.releaseYear.year"
+	  }
+	},
+	{
+	  "key": "end_year",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.releaseYear.endYear"
+	  }
+	},
+	{
+	  "key": "genres",
+	  "extractor": {
+		"foreach": "props.pageProps.contentData.entityMetadata.titleGenres.genres[*].genre",
+		"path": "text"
+	  }
+	},
+	{
+	  "key": "runtime",
+	  "extractor": {
+		"path": "props.pageProps.contentData.entityMetadata.runtime.seconds",
+		"transforms": [
+		  "div60"
+		]
+	  }
+	},
+	{
+	  "key": "certification",
+	  "extractor": {
+		"rules": [
+		  {
+			"key": "mpa_rating",
+			"extractor": {
+			  "path": "props.pageProps.contentData.entityMetadata.certificate.rating"
+			}
+		  },
+		  {
+			"key": "mpa_rating_reason",
+			"extractor": {
+			  "path": "props.pageProps.contentData.contentRatingData.ratingReason"
+			}
+		  },
+		  {
+			"key": "certificates",
+			"extractor": {
+			  "foreach": "props.pageProps.contentData.certificates[*]",
+			  "rules": [
+				{
+				  "key": "country",
+				  "extractor": {
+					"path": "country"
+				  }
+				},
+				{
+				  "key": "ratings",
+				  "extractor": {
+					"path": "ratings[*].rating"
+				  }
+				}
+			  ]
+			}
+		  }
+		]
+	  }
+	},
+	{
+	  "key": "advisories",
+	  "transforms": [
+		"flatten_list_of_dicts"
+	  ],
+	  "extractor": {
+		"foreach": "props.pageProps.contentData.categories[*]",
+		"transforms": [
+		  "make_dict"
+		],
+		"rules": [
+		  {
+			"key": "key",
+			"extractor": {
+			  "path": "id",
+			  "transforms": [
+				"lower"
+			  ]
+			}
+		  },
+		  {
+			"key": "value",
+			"extractor": {
+			  "rules": [
+				{
+				  "key": "details",
+				  "extractor": {
+					"foreach": "items[*]",
+					"rules": [
+					  {
+						"key": "text",
+						"extractor": {
+						  "path": "text"
+						}
+					  },
+					  {
+						"key": "is_spoiler",
+						"extractor": {
+						  "path": "isSpoiler"
+						}
+					  }
+					]
+				  }
+				},
+				{
+				  "key": "status",
+				  "extractor": {
+					"path": "severitySummary.text"
+				  }
+				},
+				{
+				  "key": "votes",
+				  "transforms": [
+					"flatten_list_of_dicts"
+				  ],
+				  "extractor": {
+					"foreach": "severityBreakdown[*]",
+					"transforms": [
+					  "make_dict"
+					],
+					"rules": [
+					  {
+						"key": "key",
+						"extractor": {
+						  "path": "text",
+						  "transforms": [
+							"lower"
+						  ]
+						}
+					  },
+					  {
+						"key": "value",
+						"extractor": {
+						  "path": "votes"
+						}
+					  }
+					]
+				  }
+				}
+			  ]
+			}
+		  }
+		]
+	  }
+	}
   ]
 }

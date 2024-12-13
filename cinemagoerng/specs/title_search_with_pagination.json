@@ -4,83 +4,89 @@
   "doctype": "json",
   "path_type": "jmespath",
   "rules": [
-    {
-      "key": "results",
-      "extractor": {
-        "foreach": "data.advancedTitleSearch.edges[*]",
-        "rules": [
-          {
-            "key": "imdb_id",
-            "extractor": {
-              "path": "node.title.id"
-            }
-          },
-          {
-            "key": "type_id",
-            "extractor": {
-              "path": "node.title.titleType.id"
-            }
-          },
-          {
-            "key": "title",
-            "extractor": {
-              "path": "node.title.titleText.text"
-            }
-          },
-          {
-            "key": "year",
-            "extractor": {
-              "path": "node.title.releaseYear.year"
-            }
-          },
-          {
-            "key": "end_year",
-            "extractor": {
-              "path": "node.title.releaseYear.endYear"
-            }
-          },
-          {
-            "key": "runtime",
-            "extractor": {
-              "path": "node.title.runtime.seconds",
-              "transforms": ["div60"]
-            }
-          },
-          {
-            "key": "genres",
-            "extractor": {
-              "path": "node.title.genres[*].genre.text"
-            }
-          },
-          {
-            "key": "rating",
-            "extractor": {
-              "path": "node.title.ratingsSummary.aggregateRating",
-              "transforms": ["decimal"]
-            }
-          },
-          {
-            "key": "vote_count",
-            "extractor": {
-              "path": "node.title.ratingsSummary.voteCount"
-            }
-          },
-          {
-            "key": "plot",
-            "extractor": {
-              "path": "node.title.plot.plotText.plainText",
-              "transforms": ["make_default_plot"]
-            }
-          },
-          {
-            "key": "primary_image",
-            "extractor": {
-              "path": "node.title.primaryImage.url"
-            }
-          }
-        ]
-      }
-    },
+	{
+	  "key": "results",
+	  "extractor": {
+		"foreach": "data.advancedTitleSearch.edges[*]",
+		"rules": [
+		  {
+			"key": "imdb_id",
+			"extractor": {
+			  "path": "node.title.id"
+			}
+		  },
+		  {
+			"key": "type_id",
+			"extractor": {
+			  "path": "node.title.titleType.id"
+			}
+		  },
+		  {
+			"key": "title",
+			"extractor": {
+			  "path": "node.title.titleText.text"
+			}
+		  },
+		  {
+			"key": "year",
+			"extractor": {
+			  "path": "node.title.releaseYear.year"
+			}
+		  },
+		  {
+			"key": "end_year",
+			"extractor": {
+			  "path": "node.title.releaseYear.endYear"
+			}
+		  },
+		  {
+			"key": "runtime",
+			"extractor": {
+			  "path": "node.title.runtime.seconds",
+			  "transforms": [
+				"div60"
+			  ]
+			}
+		  },
+		  {
+			"key": "genres",
+			"extractor": {
+			  "path": "node.title.genres[*].genre.text"
+			}
+		  },
+		  {
+			"key": "rating",
+			"extractor": {
+			  "path": "node.title.ratingsSummary.aggregateRating",
+			  "transforms": [
+				"decimal"
+			  ]
+			}
+		  },
+		  {
+			"key": "vote_count",
+			"extractor": {
+			  "path": "node.title.ratingsSummary.voteCount"
+			}
+		  },
+		  {
+			"key": "plot",
+			"extractor": {
+			  "path": "node.title.plot.plotText.plainText",
+			  "transforms": [
+				"make_default_plot"
+			  ]
+			}
+		  },
+		  {
+			"key": "primary_image",
+			"extractor": {
+			  "path": "node.title.primaryImage.url"
+			}
+		  }
+		]
+	  }
+	},
 	{
 	  "key": "has_next_page",
 	  "extractor": {

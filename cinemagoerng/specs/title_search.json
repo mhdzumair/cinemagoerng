@@ -3,96 +3,104 @@
   "url": "https://www.imdb.com/search/title/?%(url_params)s",
   "doctype": "html",
   "path_type": "jmespath",
-  "pre": ["parse_next_data"],
+  "pre": [
+	"parse_next_data"
+  ],
   "rules": [
-    {
-      "key": "results",
-      "extractor": {
-        "foreach": "props.pageProps.searchResults.titleResults.titleListItems[*]",
-        "rules": [
-          {
-            "key": "imdb_id",
-            "extractor": {
-              "path": "titleId"
-            }
-          },
-          {
-            "key": "type_id",
-            "extractor": {
-              "path": "titleType.id"
-            }
-          },
-          {
-            "key": "title",
-            "extractor": {
-              "path": "titleText"
-            }
-          },
-          {
-            "key": "year",
-            "extractor": {
-              "path": "releaseYear"
-            }
-          },
-          {
-            "key": "end_year",
-            "extractor": {
-              "path": "endYear"
-            }
-          },
-          {
-            "key": "runtime",
-            "extractor": {
-              "path": "runtime",
-              "transforms": ["div60"]
-            }
-          },
-          {
-            "key": "genres",
-            "extractor": {
-              "path": "genres"
-            }
-          },
-          {
-            "key": "rating",
-            "extractor": {
-              "path": "ratingSummary.aggregateRating",
-              "transforms": ["decimal"]
-            }
-          },
-          {
-            "key": "vote_count",
-            "extractor": {
-              "path": "ratingSummary.voteCount"
-            }
-          },
-          {
-            "key": "plot",
-            "extractor": {
-              "path": "plot",
-              "transforms": ["make_default_plot"]
-            }
-          },
-          {
-            "key": "primary_image",
-            "extractor": {
-              "path": "primaryImage.url"
-            }
-          }
-        ]
-      }
-    },
-    {
-      "key": "end_cursor",
-      "extractor": {
-        "path": "props.pageProps.searchResults.titleResults.endCursor"
-      }
-    },
-    {
-      "key": "total_results",
-      "extractor": {
-        "path": "props.pageProps.searchResults.titleResults.total"
-      }
-    }
+	{
+	  "key": "results",
+	  "extractor": {
+		"foreach": "props.pageProps.searchResults.titleResults.titleListItems[*]",
+		"rules": [
+		  {
+			"key": "imdb_id",
+			"extractor": {
+			  "path": "titleId"
+			}
+		  },
+		  {
+			"key": "type_id",
+			"extractor": {
+			  "path": "titleType.id"
+			}
+		  },
+		  {
+			"key": "title",
+			"extractor": {
+			  "path": "titleText"
+			}
+		  },
+		  {
+			"key": "year",
+			"extractor": {
+			  "path": "releaseYear"
+			}
+		  },
+		  {
+			"key": "end_year",
+			"extractor": {
+			  "path": "endYear"
+			}
+		  },
+		  {
+			"key": "runtime",
+			"extractor": {
+			  "path": "runtime",
+			  "transforms": [
+				"div60"
+			  ]
+			}
+		  },
+		  {
+			"key": "genres",
+			"extractor": {
+			  "path": "genres"
+			}
+		  },
+		  {
+			"key": "rating",
+			"extractor": {
+			  "path": "ratingSummary.aggregateRating",
+			  "transforms": [
+				"decimal"
+			  ]
+			}
+		  },
+		  {
+			"key": "vote_count",
+			"extractor": {
+			  "path": "ratingSummary.voteCount"
+			}
+		  },
+		  {
+			"key": "plot",
+			"extractor": {
+			  "path": "plot",
+			  "transforms": [
+				"make_default_plot"
+			  ]
+			}
+		  },
+		  {
+			"key": "primary_image",
+			"extractor": {
+			  "path": "primaryImage.url"
+			}
+		  }
+		]
+	  }
+	},
+	{
+	  "key": "end_cursor",
+	  "extractor": {
+		"path": "props.pageProps.searchResults.titleResults.endCursor"
+	  }
+	},
+	{
+	  "key": "total_results",
+	  "extractor": {
+		"path": "props.pageProps.searchResults.titleResults.total"
+	  }
+	}
   ]
 }
