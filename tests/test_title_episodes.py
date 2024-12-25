@@ -341,3 +341,16 @@ def test_updating_episodes_should_accumulate_year_with_pagination(
             )
             == total_episode_count
         )
+
+
+@pytest.mark.parametrize(
+    ("imdb_id", "total_episode_count"),
+    [
+        ("tt0903747", 62),  # Breaking Bad
+    ],
+)
+def test_updating_episodes_should_accumulate_episodes(imdb_id, total_episode_count):
+    parsed = web.get_title(imdb_id=imdb_id, page="reference")
+    assert len(parsed.episodes) == 0
+    web.update_title(parsed, page="episodes_with_pagination", keys=["episodes"], paginate_result=True)
+    assert len([ep for season in parsed.episodes.values() for ep in season.values()]) == total_episode_count

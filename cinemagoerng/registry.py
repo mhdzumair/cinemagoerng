@@ -277,12 +277,13 @@ def build_episode_graphql_url(url_data: dict[str, Any]) -> str:
         "sort": {"by": "EPISODE_THEN_RELEASE", "order": "ASC"},
     }
 
-    if params["filter_type"] == "year":
+    filter_type = params.get("filter_type")
+    if filter_type == "year":
         variables["filter"] = {
             "releasedOnOrAfter": {"year": params["start_year"]},
             "releasedOnOrBefore": {"year": params["end_year"]},
         }
-    elif params["filter_type"] == "season":
+    elif filter_type == "season":
         variables["filter"] = {"includeSeasons": [params["season"]]}
 
     extensions = {

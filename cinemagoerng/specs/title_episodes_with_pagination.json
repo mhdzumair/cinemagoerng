@@ -2,9 +2,7 @@
   "version": "20240703",
   "url": "https://caching.graphql.imdb.com/?operationName=TitleEpisodesSubPagePagination&variables=%(variables)s&extensions=%(extensions)s",
   "url_default_params": {
-	"after": "null",
-	"filter_type": "season",
-	"season": "1"
+	"after": "null"
   },
   "url_transform": "build_episode_graphql_url",
   "doctype": "json",
