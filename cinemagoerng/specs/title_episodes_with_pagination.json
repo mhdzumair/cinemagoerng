@@ -34,13 +34,15 @@
 		  {
 			"key": "season",
 			"extractor": {
-			  "path": "series.displayableEpisodeNumber.displayableSeason.displayableProperty.value.plainText"
+			  "path": "series.displayableEpisodeNumber.displayableSeason.displayableProperty.value.plainText",
+			  "transforms": ["int"]
 			}
 		  },
 		  {
 			"key": "episode",
 			"extractor": {
-			  "path": "series.displayableEpisodeNumber.episodeNumber.displayableProperty.value.plainText"
+			  "path": "series.displayableEpisodeNumber.episodeNumber.displayableProperty.value.plainText",
+			  "transforms": ["int"]
 			}
 		  },
 		  {

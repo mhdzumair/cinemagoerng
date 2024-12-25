@@ -129,12 +129,8 @@ class UpdateTitle(Operation[None]):
                 continue
 
             if key == "episodes":
-                if isinstance(value, dict):
-                    value = piculet.deserialize(value, model.EpisodeMap)
-                    self.title.episodes.update(value)
-                else:
-                    value = piculet.deserialize(value, list[model.TVEpisode])
-                    self.title.add_episodes(value)
+                value = piculet.deserialize(value, list[model.TVEpisode])
+                self.title.add_episodes(value)
             elif key == "akas":
                 value = [piculet.deserialize(aka, model.AKA) for aka in value]
                 self.title.akas.extend(value)

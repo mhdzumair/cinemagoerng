@@ -56,96 +56,89 @@
     {
       "key": "episodes",
       "extractor": {
+        "foreach": "props.pageProps.contentData.section.episodes.items[*]",
         "rules": [
           {
-            "key": {
-              "path": "props.pageProps.contentData.section.currentSeason"
-            },
+            "key": "imdb_id",
             "extractor": {
-              "foreach": "props.pageProps.contentData.section.episodes.items[*]",
+              "path": "id"
+            }
+          },
+          {
+            "key": "type_id",
+            "extractor": {
+              "path": "type"
+            }
+          },
+          {
+            "key": "title",
+            "extractor": {
+              "path": "titleText"
+            }
+          },
+          {
+            "key": "season",
+            "extractor": {
+              "path": "season",
+              "transforms": ["int"]
+            }
+          },
+          {
+            "key": "episode",
+            "extractor": {
+              "path": "episode",
+              "transforms": ["int"]
+            }
+          },
+          {
+            "key": "year",
+            "extractor": {
+              "path": "releaseYear"
+            }
+          },
+          {
+            "key": "release_date",
+            "extractor": {
               "rules": [
-                {
-                  "key": "imdb_id",
-                  "extractor": {
-                    "path": "id"
-                  }
-                },
-                {
-                  "key": "type_id",
-                  "extractor": {
-                    "path": "type"
-                  }
-                },
-                {
-                  "key": "title",
-                  "extractor": {
-                    "path": "titleText"
-                  }
-                },
-                {
-                  "key": "season",
-                  "extractor": {
-                    "path": "season"
-                  }
-                },
-                {
-                  "key": "episode",
-                  "extractor": {
-                    "path": "episode"
-                  }
-                },
                 {
                   "key": "year",
                   "extractor": {
-                    "path": "releaseYear"
+                    "path": "releaseDate.year"
                   }
                 },
                 {
-                  "key": "release_date",
+                  "key": "month",
                   "extractor": {
-                    "rules": [
-                      {
-                        "key": "year",
-                        "extractor": {
-                          "path": "releaseDate.year"
-                        }
-                      },
-                      {
-                        "key": "month",
-                        "extractor": {
-                          "path": "releaseDate.month"
-                        }
-                      },
-                      {
-                        "key": "day",
-                        "extractor": {
-                          "path": "releaseDate.day"
-                        }
-                      }
-                    ],
-                    "transforms": ["date"]
+                    "path": "releaseDate.month"
                   }
                 },
                 {
-                  "key": "_plot",
+                  "key": "day",
                   "extractor": {
-                    "path": "plot"
-                  }
-                },
-                {
-                  "key": "rating",
-                  "extractor": {
-                    "path": "aggregateRating",
-                    "transforms": ["decimal"]
-                  }
-                },
-                {
-                  "key": "vote_count",
-                  "extractor": {
-                    "path": "voteCount"
+                    "path": "releaseDate.day"
                   }
                 }
-              ]
+              ],
+              "transforms": ["date"]
+            }
+          },
+          {
+            "key": "_plot",
+            "extractor": {
+              "path": "plot"
+            }
+          },
+          {
+            "key": "rating",
+            "extractor": {
+              "path": "aggregateRating",
+              "transforms": ["decimal"]
+            }
+          },
+          {
+            "key": "vote_count",
+            "extractor": {
+              "path": "voteCount"
             }
           }
         ]
@@ -153,7 +146,6 @@
     }
   ],
   "post": [
-    "generate_episode_map",
     "set_plot_langs"
   ]
 }

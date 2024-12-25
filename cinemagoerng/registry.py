@@ -68,11 +68,6 @@ def unpack_dicts(data):
         del data["__dict__"]
 
 
-def generate_episode_map(data):
-    for season, episodes in data["episodes"].items():
-        data["episodes"][season] = {ep["episode"]: ep for ep in episodes}
-
-
 def set_plot_langs(data):
     episodes = data.get("episodes")
     default_lang = data.get("_page_lang", "en-US")
@@ -98,7 +93,6 @@ def update_postprocessors(registry: dict[str, Postprocessor]) -> None:
     registry.update(
         {
             "unpack_dicts": unpack_dicts,
-            "generate_episode_map": generate_episode_map,
             "set_plot_langs": set_plot_langs,
         }
     )
@@ -283,8 +277,8 @@ def build_episode_graphql_url(url_data: dict[str, Any]) -> str:
             "releasedOnOrAfter": {"year": params["start_year"]},
             "releasedOnOrBefore": {"year": params["end_year"]},
         }
-    elif filter_type == "season":
-        variables["filter"] = {"includeSeasons": [params["season"]]}
+    elif filter_type == "season" or params.get("season"):
+        variables["filter"] = {"includeSeasons": [str(params["season"])]}
 
     extensions = {
         "persistedQuery": {
