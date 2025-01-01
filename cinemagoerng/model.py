@@ -267,12 +267,18 @@ class _TVSeriesBase(_TimedTitle):
 
     def get_episode(self, season: int, episode: int) -> TVEpisode | None:
         return next(
-            (ep for ep in self.episodes if ep.season == season and ep.episode == episode),
+            (
+                ep
+                for ep in self.episodes
+                if ep.season == season and ep.episode == episode
+            ),
             None,
         )
 
     def add_episodes(self, new_episodes: list[TVEpisode]) -> None:
-        existing_episodes_keys = {(ep.season, ep.episode) for ep in self.episodes}
+        existing_episodes_keys = {
+            (ep.season, ep.episode) for ep in self.episodes
+        }
         for ep in new_episodes:
             if (ep.season, ep.episode) not in existing_episodes_keys:
                 self.episodes.append(ep)

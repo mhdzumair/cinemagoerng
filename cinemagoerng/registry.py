@@ -237,12 +237,12 @@ def parse_episode_count(value: str) -> int:
     return int(value[:-1].split("(")[1])
 
 
-def parse_season_number(value: str) -> str:
-    return value.strip().split("Season ")[1]
+def parse_season_number(value: str) -> int:
+    return int(value.strip().split("Season ")[1])
 
 
-def parse_episode_number(value: str) -> str:
-    return value.strip().split("Episode ")[1]
+def parse_episode_number(value: str) -> int:
+    return int(value.strip().split("Episode ")[1])
 
 
 def exists(value: str) -> bool:

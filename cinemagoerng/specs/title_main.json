@@ -251,14 +251,14 @@
       "key": "season",
       "extractor": {
         "path": "props.pageProps.aboveTheFoldData.series.episodeNumber.seasonNumber",
-        "transforms": ["str"]
+        "transforms": ["int"]
       }
     },
     {
       "key": "episode",
       "extractor": {
         "path": "props.pageProps.aboveTheFoldData.series.episodeNumber.episodeNumber",
-        "transforms": ["str"]
+        "transforms": ["int"]
       }
     },
     {

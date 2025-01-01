@@ -534,7 +534,7 @@ def test_title_parser_should_set_series_year_for_episode(imdb_id, year):
 @pytest.mark.parametrize(
     ("imdb_id", "season", "episode"),
     [
-        ("tt1000252", "3", "10"),  # Doctor Who: Blink
+        ("tt1000252", 3, 10),  # Doctor Who: Blink
     ],
 )
 def test_title_parser_should_set_season_and_episode_number_for_episode(

@@ -95,8 +95,7 @@ def test_title_parser_should_set_end_year(imdb_id, end_year):
 def test_title_episodes_parser_should_instantiate_episodes(imdb_id):
     parsed = web.get_title(imdb_id=imdb_id, page="episodes", season="1")
     assert all(
-        isinstance(episode, model.TVEpisode)
-        for episode in parsed.episodes
+        isinstance(episode, model.TVEpisode) for episode in parsed.episodes
     )
 
 
@@ -344,8 +343,15 @@ def test_updating_episodes_should_accumulate_year_with_pagination(
         ("tt0903747", 62),  # Breaking Bad
     ],
 )
-def test_updating_episodes_should_accumulate_episodes(imdb_id, total_episode_count):
+def test_updating_episodes_should_accumulate_episodes(
+    imdb_id, total_episode_count
+):
     parsed = web.get_title(imdb_id=imdb_id, page="reference")
     assert len(parsed.episodes) == 0
-    web.update_title(parsed, page="episodes_with_pagination", keys=["episodes"], paginate_result=True)
+    web.update_title(
+        parsed,
+        page="episodes_with_pagination",
+        keys=["episodes"],
+        paginate_result=True,
+    )
     assert len(parsed.episodes) == total_episode_count
