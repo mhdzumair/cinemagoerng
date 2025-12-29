@@ -144,6 +144,7 @@ class _Title:
     primary_image: str | None = None
 
     year: int | None = None
+    release_date: date | None = None
     country_codes: list[str] = field(default_factory=list)
     language_codes: list[str] = field(default_factory=list)
     genres: list[str] = field(default_factory=list)
