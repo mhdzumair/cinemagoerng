@@ -332,11 +332,12 @@ def set_parental_guide(
     data = _scrape(
         spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
     )
-    title.certification = deserialize(
-        data["certification"],
-        model.Certification,
-    )
-    title.advisories = deserialize(data["advisories"], model.Advisories)
+    certification = data.get("certification")
+    if certification is not None:
+        title.certification = deserialize(certification, model.Certification)
+    advisories = data.get("advisories")
+    if advisories is not None:
+        title.advisories = deserialize(advisories, model.Advisories)
 
 
 async def set_parental_guide_async(
@@ -351,11 +352,12 @@ async def set_parental_guide_async(
     data = await _scrape_async(
         spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
     )
-    title.certification = deserialize(
-        data["certification"],
-        model.Certification,
-    )
-    title.advisories = deserialize(data["advisories"], model.Advisories)
+    certification = data.get("certification")
+    if certification is not None:
+        title.certification = deserialize(certification, model.Certification)
+    advisories = data.get("advisories")
+    if advisories is not None:
+        title.advisories = deserialize(advisories, model.Advisories)
 
 
 # =========================================================================
