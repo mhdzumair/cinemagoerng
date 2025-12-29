@@ -1,0 +1,115 @@
+{
+  "version": "20251123",
+  "url": "https://www.imdb.com/title/%(imdb_id)s/parentalguide/",
+  "doctype": "html",
+  "pre": [
+    "parse_next_data"
+  ],
+  "root": "props.pageProps.contentData",
+  "rules": [
+    {
+      "key": "certification",
+      "extractor": {
+        "rules": [
+          {
+            "key": "mpa_rating",
+            "extractor": {
+              "path": "entityMetadata.certificate.rating"
+            }
+          },
+          {
+            "key": "mpa_rating_reason",
+            "extractor": {
+              "path": "contentRatingData.ratingReason"
+            }
+          },
+          {
+            "key": "certificates",
+            "extractor": {
+              "foreach": "certificates[*]",
+              "rules": [
+                {
+                  "key": "country",
+                  "extractor": {
+                    "path": "country"
+                  }
+                },
+                {
+                  "key": "ratings",
+                  "extractor": {
+                    "path": "ratings[*].rating"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "key": "advisories",
+      "extractor": {
+        "rules": [
+          {
+            "foreach": "categories[*]",
+            "key": {
+              "path": "id",
+              "transforms": [
+                "lower"
+              ]
+            },
+            "extractor": {
+              "rules": [
+                {
+                  "key": "details",
+                  "extractor": {
+                    "foreach": "items[*]",
+                    "rules": [
+                      {
+                        "key": "text",
+                        "extractor": {
+                          "path": "text"
+                        }
+                      },
+                      {
+                        "key": "is_spoiler",
+                        "extractor": {
+                          "path": "isSpoiler"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": "status",
+                  "extractor": {
+                    "path": "severitySummary.text"
+                  }
+                },
+                {
+                  "key": "votes",
+                  "extractor": {
+                    "rules": [
+                      {
+                        "foreach": "severityBreakdown[*]",
+                        "key": {
+                          "path": "text",
+                          "transforms": [
+                            "lower"
+                          ]
+                        },
+                        "extractor": {
+                          "path": "votes"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

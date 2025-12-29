@@ -1,0 +1,69 @@
+{
+  "version": "20251123",
+  "url": "https://caching.graphql.imdb.com/",
+  "graphql": {
+    "operationName": "TitleAkasPaginated",
+    "variables": {
+      "after": "null",
+      "const": "%(imdb_id)s",
+      "first": 50,
+      "isAutoTranslationEnabled": false,
+      "locale": "en-US",
+      "originalTitleText": true
+    },
+    "extensions": {
+      "persistedQuery": {
+        "sha256Hash": "48d4f7bfa73230fb550147bd4704d8050080e65fe2ad576da6276cac2330e446",
+        "version": 1
+      }
+    }
+  },
+  "doctype": "json",
+  "root": "data.title.akas",
+  "rules": [
+    {
+      "key": "akas",
+      "extractor": {
+        "foreach": "edges[*].node",
+        "rules": [
+          {
+            "key": "title",
+            "extractor": {
+              "path": "displayableProperty.value.plainText"
+            }
+          },
+          {
+            "key": "country_code",
+            "extractor": {
+              "path": "country.id"
+            }
+          },
+          {
+            "key": "language_code",
+            "extractor": {
+              "path": "language.id"
+            }
+          },
+          {
+            "key": "notes",
+            "extractor": {
+              "path": "displayableProperty.qualifiersInMarkdownList[*].plainText"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "key": "has_next_page",
+      "extractor": {
+        "path": "pageInfo.hasNextPage"
+      }
+    },
+    {
+      "key": "end_cursor",
+      "extractor": {
+        "path": "pageInfo.endCursor"
+      }
+    }
+  ]
+}

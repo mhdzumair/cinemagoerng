@@ -1,79 +1,87 @@
 [project]
 name = "cinemagoerng"
-version = "0.4"
+version = "0.7"
 description = "Retrieve data from the IMDb."
 readme = "README.md"
 
 authors = [
     {name = "H. Turgut Uyar", email = "uyar@tekir.org"},
-    {name = "Davide Alberani", email = "da@mimante.net"},
 ]
-license = {file = "LICENSE.txt"}
+license = "GPL-3.0-only"
+license-files = [
+    "LICENSE.txt",
+    "LICENSE-piculet.txt",
+]
 
-keywords = ["imdb", "cinema", "movie", "film", "cast", "actor", "director"]
+keywords = [
+    "imdb",
+    "cinema",
+    "movie",
+    "film",
+    "cast",
+    "actor",
+    "director",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Topic :: Database :: Front-Ends",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-requires-python = "~=3.10"
+requires-python = "~=3.11"
 dependencies = [
-    "typedload",
-    "lxml",
-    "jmespath",
-    "httpx",
+    "typedload~=2.39",
+    "lxml~=5.4.0",
+    "jmespath~=1.0.1",
+    "httpx>=0.27.0",
 ]
 
-[project.optional-dependencies]
-tests = [
-    "pytest",
-    "pytest-cov",
+[dependency-groups]
+test = [
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
 ]
-types = [
-    "mypy",
-    "lxml-stubs",
-    "types-jmespath",
+typing = [
+    "mypy>=1.18.2",
+    "lxml-stubs>=0.5.1",
+    "types-jmespath>=1.0.2.20250809",
 ]
-style = ["ruff"]
+style = [
+    "ruff>=0.14.6",
+]
 dev = [
-    "cinemagoerng[tests,types,style]",
-    "build",
-    "twine",
-    "tox",
+    {include-group = "test"},
+    {include-group = "typing"},
+    {include-group = "style"},
+    "tox-uv>=1.29.0",
 ]
 
 [project.urls]
-repository = "https://github.com/cinemagoer/cinemagoerng"
+repository = "https://codeberg.org/cinemagoer/cinemagoerng"
 
 [project.scripts]
 cinemagoerng = "cinemagoerng:cli.main"
-
-[tool.setuptools]
-packages = ["cinemagoerng"]
-include-package-data = false
-
-[tool.setuptools.package-data]
-cinemagoerng = ["specs/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.coverage.run]
 source_pkgs = ["cinemagoerng"]
+omit = [
+    "src/cinemagoerng/piculet.py",
+]
 
 [tool.coverage.report]
 show_missing = true
@@ -84,10 +92,10 @@ line-length = 79
 
 [tool.ruff.lint]
 select = ["A", "E", "F", "I", "T", "W"]
+ignore = ["E731"]
 
 [tool.ruff.lint.per-file-ignores]
 "cli.py" = ["T201"]
-"tests/*" = ["E501"]
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
@@ -95,11 +103,11 @@ lines-after-imports = 2
 [tool.tox]
 legacy_tox_ini = """
 [tox]
-envlist = py3{10,11,12,13}, pypy3{10}, types, style
+envlist = py3{11,12,13,14}, pypy3{11}, types, style
 isolated_build = True
 
 [testenv]
-extras = tests
+runner = uv-venv-lock-runner
 package = wheel
 wheel_build_env = .pkg
 commands =
@@ -110,28 +118,14 @@ commands =
     pytest --cov
 
 [testenv:types]
-extras = types
 commands =
-    mypy cinemagoerng
+    mypy src tests
 
 [testenv:style]
-skip_install = true
-deps =
-    ruff
 commands =
-    ruff check --preview cinemagoerng tests
-
-[testenv:package]
-skip_install = true
-deps =
-    build
-    twine
-commands =
-    python -c "import shutil; shutil.rmtree('dist', ignore_errors=True)"
-    python -m build
-    twine check dist/*
+    ruff check --preview src tests
 """
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build"]
+build-backend = "uv_build"

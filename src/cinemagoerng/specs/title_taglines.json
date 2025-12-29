@@ -1,0 +1,21 @@
+{
+  "version": "20251123",
+  "url": "https://www.imdb.com/title/%(imdb_id)s/taglines/",
+  "doctype": "html",
+  "pre": [
+    "parse_next_data"
+  ],
+  "root": "props.pageProps.contentData",
+  "rules": [
+    {
+      "key": "taglines",
+      "extractor": {
+        "foreach": "section.items[*]",
+        "path": "htmlContent",
+        "transforms": [
+          "unescape"
+        ]
+      }
+    }
+  ]
+}

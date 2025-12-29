@@ -1,6 +1,9 @@
-import hashlib
+import pytest
+
+import copy
+import json
 from pathlib import Path
-from typing import Any, Optional
+from urllib.parse import urlparse
 
 import cinemagoerng.web
 
@@ -11,94 +14,86 @@ if not cache_dir.exists():
     cache_dir.mkdir(parents=True, exist_ok=True)
 
 
-class CachedHTTPClient(cinemagoerng.web.HTTPClient):
-    """HTTP client with caching support for both sync and async operations."""
-
-    def _get_cache_key(self, url: str, **kwargs) -> tuple[str, Path]:
-        """Generate cache key and path for the request."""
-        imdb_id = kwargs.get("imdb_id")
-        page = kwargs.get("page")
-        doc_type = kwargs.get("doc_type", "html")
-
-        # Generate cache key
-        key = f"title_{imdb_id}_{page}" if imdb_id and page else "search"
-
-        # Remove httpx kwargs and internal params from cache key
-        cache_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k not in ("httpx_kwargs", "doc_type", "imdb_id", "page")
-        }
-        extra_args = [f"{k}={v}" for k, v in sorted(cache_kwargs.items())]
-        key += "_" + "_".join(extra_args) if extra_args else ""
-
-        if len(key) > 30:
-            hash_key = hashlib.md5(url.encode()).hexdigest()
-            key = f"{key[:30]}_{hash_key[:10]}"
-        key += f".{doc_type}"
-
-        cache_path = cache_dir / key
-        return key, cache_path
-
-    def _read_cache(self, cache_path: Path) -> Optional[str]:
-        """Read content from cache if available."""
-        if cache_path.exists():
-            return cache_path.read_text(encoding="utf-8")
-        return None
-
-    def _write_cache(self, cache_path: Path, content: str) -> None:
-        """Write content to cache."""
-        cache_path.write_text(content, encoding="utf-8")
-
-    def fetch(
-        self,
-        url: str,
-        **kwargs: Any,
-    ) -> str:
-        """Synchronous fetch with caching support."""
-        # Handle special test cases
-        key, cache_path = self._get_cache_key(url, **kwargs)
-        if key == "tt0000001_main.html":
-            cache_path.unlink(missing_ok=True)
-
-        # Check cache unless explicitly disabled
-        cached_content = self._read_cache(cache_path)
-        if cached_content is not None:
-            return cached_content
-
-        # Fetch content
-        content = super().fetch(url, **kwargs)
-
-        self._write_cache(cache_path, content)
-
-        return content
-
-    async def fetch_async(
-        self,
-        url: str,
-        **kwargs: Any,
-    ) -> str:
-        """Asynchronous fetch with caching support."""
-        # Handle special test cases
-        key, cache_path = self._get_cache_key(url, **kwargs)
-        if key == "tt0000001_main.html":
-            cache_path.unlink(missing_ok=True)
-
-        # Check cache unless explicitly disabled
-        if not kwargs.get("cache", True):
-            cached_content = self._read_cache(cache_path)
-            if cached_content is not None:
-                return cached_content
-
-        # Fetch content
-        content = await super().fetch_async(url, **kwargs)
-
-        # Cache content unless explicitly disabled
-        if kwargs.get("cache", True):
-            self._write_cache(cache_path, content)
-
-        return content
+# Store original fetch method
+_http_client = cinemagoerng.web._http_client
+fetch_orig = _http_client.fetch
 
 
-# Replace original HTTP client with cached version
-cinemagoerng.web._http_client = CachedHTTPClient()
+CACHE_SUFFIXES = {
+    "application/json": ".json",
+    "text/html": ".html",
+}
+
+CACHE_KEY_IGNORED_VARS = {
+    "isAutoTranslationEnabled",
+    "locale",
+    "originalTitleText",
+}
+
+
+def get_cache_key(url: str, *, headers: dict[str, str] | None = None) -> str:
+    parsed = urlparse(url)
+    path = parsed.path.replace("/", "_")
+    if path.startswith("_"):
+        path = path[1:]
+    if path.endswith("_"):
+        path = path[:-1]
+
+    if len(parsed.query) > 0:
+        query_params = parsed.query.split("&")
+        q_vars: dict[str, str] = {}
+        g_op: str | None = None
+        for param in query_params:
+            equals = param.index("=")
+            q_key, q_value = param[:equals], param[equals + 1:]
+            match q_key:
+                case "operationName":
+                    g_op = q_value
+                case "variables":
+                    q_vars = q_vars | {
+                        k: v for k, v in json.loads(q_value).items()
+                        if k not in CACHE_KEY_IGNORED_VARS
+                    }
+                case "extensions":
+                    pass
+                case _:
+                    q_vars[q_key] = q_value
+        if len(q_vars) > 0:
+            if g_op is not None:
+                imdb_id = q_vars.pop("const")
+                path += f"title_{imdb_id}_{g_op}"
+            q_query = "__".join(f"{k}_{v}" for k, v in q_vars.items())
+            path += f"__{q_query}"
+
+    request_headers = copy.copy(headers) if headers is not None else {}
+    content_type = request_headers.pop("Content-Type", "text/html")
+    suffix = CACHE_SUFFIXES[content_type]
+    if len(request_headers) > 0:
+        q_headers = "__".join(
+            f"{k.lower()}_{v}" for k, v in request_headers.items()
+        )
+        path += f"__{q_headers}"
+    return f"{path}{suffix}"
+
+
+def fetch_cached(url: str, headers: dict[str, str] | None = None) -> str:
+    cache_key = get_cache_key(url, headers=headers)
+    cache_path = cache_dir / cache_key
+    if cache_key == "title_tt0000001_reference.html":
+        cache_path.unlink(missing_ok=True)
+    if cache_path.exists():
+        return cache_path.read_text(encoding="utf-8")
+    content = fetch_orig(url, headers=headers)
+    cache_path.write_text(content, encoding="utf-8")
+    return content
+
+
+# Patch the HTTP client's fetch method for caching
+_http_client.fetch = fetch_cached
+
+
+@pytest.fixture
+def cov():
+    """Fixture to detect if running under coverage."""
+    import sys
+    return "coverage" in sys.modules

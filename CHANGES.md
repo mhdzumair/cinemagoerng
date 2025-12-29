@@ -1,9 +1,38 @@
 # CHANGES
 
-## 0.4 (unreleased)
+## 0.8 (unreleased)
+
+- Change license to GPL 3.0 only.
+- Move from GitHub to Codeberg.
+
+## 0.7 (2025-11-23)
+
+- Update to Piculet 2 (spec files edited for format changes).
+
+## 0.6 (2025-10-29)
+
+- Getting a title now always uses the reference page.
+- Updating a title now uses specific functions instead of generic page update.
+- Improve GraphQL handling.
+- Credits now contain person objects instead of subclassing.
+- Add Accept-Language header to HTTP requests (@tykling).
+
+## 0.5.1 (2025-10-14)
+
+- Fix imports for cli and tests.
+
+## 0.5 (2025-10-14)
+
+- Drop support for Python 3.10.
+- Remove the title main page parser.
+- Adjust reference page for changes in credit categories.
+
+## 0.4 (2025-07-25)
 
 - Change license to GPL v3 or later.
-- Add support for parsing parental guidance pages (@mhdzumair).
+- Add parser for new title reference pages.
+- Add support for parsing parental guide pages (@mhdzumair).
+- Switch to uv for project management.
 
 ## 0.3 (unreleased)
 

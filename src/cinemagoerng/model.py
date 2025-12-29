@@ -1,11 +1,10 @@
-# Copyright 2024 H. Turgut Uyar <uyar@tekir.org>
+# Copyright 2024-2025 H. Turgut Uyar <uyar@tekir.org>
 #
 # This file is part of CinemagoerNG.
 #
 # CinemagoerNG is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 3 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation, version 3.
 #
 # CinemagoerNG is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,7 +12,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with CinemagoerNG.  If not, see <http://www.gnu.org/licenses/>.
+# along with CinemagoerNG.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
@@ -21,22 +20,33 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from enum import Enum, auto
-from typing import Any, List, Literal, Optional, TypeAlias, Union
+from typing import Any, Generic, Literal, TypeAlias, TypeVar
 from urllib.parse import urlparse
 
 from . import linguistics, lookup
 
 
-@dataclass
+T = TypeVar("T", int, float, str)
+
+
+@dataclass(kw_only=True)
 class Person:
     imdb_id: str
     name: str
 
 
 @dataclass
-class Credit(Person):
-    role: str | None = None
+class _Credit:
+    person: Person
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def imdb_id(self) -> str:
+        return self.person.imdb_id
+
+    @property
+    def name(self) -> str:
+        return self.person.name
 
     @property
     def as_name(self) -> str | None:
@@ -46,6 +56,16 @@ class Credit(Person):
     @property
     def uncredited(self) -> bool:
         return "uncredited" in self.notes
+
+
+@dataclass(kw_only=True)
+class CrewCredit(_Credit):
+    job: str | None = None
+
+
+@dataclass(kw_only=True)
+class CastCredit(_Credit):
+    characters: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -67,25 +87,21 @@ class AKA:
             return None
         return lookup.LANGUAGE_CODES[self.language_code.upper()]
 
-    @property
-    def is_alternative(self):
-        return len(self.notes) > 0
 
-
-@dataclass
+@dataclass(kw_only=True)
 class Certificate:
     country: str
     ratings: list[str]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Certification:
     mpa_rating: str | None = "Not Rated"
     mpa_rating_reason: str | None = None
     certificates: list[Certificate] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AdvisoryVotes:
     none: int = 0
     mild: int = 0
@@ -93,27 +109,25 @@ class AdvisoryVotes:
     severe: int = 0
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AdvisoryDetail:
     text: str
     is_spoiler: bool
 
 
-@dataclass
+AdvisoryStatus: TypeAlias = Literal[
+    "Unknown", "None", "Mild", "Moderate", "Severe"
+]
+
+
+@dataclass(kw_only=True)
 class Advisory:
     details: list[AdvisoryDetail] = field(default_factory=list)
-    status: Literal["Unknown", "None", "Mild", "Moderate", "Severe"] = (
-        "Unknown"
-    )
+    status: AdvisoryStatus = "Unknown"
     votes: AdvisoryVotes = field(default_factory=AdvisoryVotes)
 
 
-@dataclass
-class SpoilerAdvisory:
-    details: list[str] = field(default_factory=list)
-
-
-@dataclass
+@dataclass(kw_only=True)
 class Advisories:
     nudity: Advisory = field(default_factory=Advisory)
     violence: Advisory = field(default_factory=Advisory)
@@ -133,49 +147,52 @@ class _Title:
     country_codes: list[str] = field(default_factory=list)
     language_codes: list[str] = field(default_factory=list)
     genres: list[str] = field(default_factory=list)
-    plot: dict[str, str] = field(default_factory=dict)
-    plot_summaries: list[dict[str, str]] = field(default_factory=list)
     taglines: list[str] = field(default_factory=list)
-    akas: list[AKA] = field(default_factory=list)
-    certification: Certification = field(default_factory=Certification)
-    advisories: Advisories = field(default_factory=Advisories)
+    plot: dict[str, str] = field(default_factory=dict)
+    plot_summaries: dict[str, list[str]] = field(default_factory=dict)
 
     rating: Decimal | None = None
     vote_count: int = 0
     top_ranking: int | None = None
-    bottom_ranking: int | None = None
 
-    cast: list[Credit] = field(default_factory=list)
-    directors: list[Credit] = field(default_factory=list)
-    writers: list[Credit] = field(default_factory=list)
-    producers: list[Credit] = field(default_factory=list)
-    composers: list[Credit] = field(default_factory=list)
-    cinematographers: list[Credit] = field(default_factory=list)
-    editors: list[Credit] = field(default_factory=list)
-    editorial_department: list[Credit] = field(default_factory=list)
-    casting_directors: list[Credit] = field(default_factory=list)
-    production_designers: list[Credit] = field(default_factory=list)
-    art_directors: list[Credit] = field(default_factory=list)
-    set_decorators: list[Credit] = field(default_factory=list)
-    costume_designers: list[Credit] = field(default_factory=list)
-    make_up_department: list[Credit] = field(default_factory=list)
-    production_managers: list[Credit] = field(default_factory=list)
-    assistant_directors: list[Credit] = field(default_factory=list)
-    art_department: list[Credit] = field(default_factory=list)
-    sound_department: list[Credit] = field(default_factory=list)
-    special_effects: list[Credit] = field(default_factory=list)
-    visual_effects: list[Credit] = field(default_factory=list)
-    stunts: list[Credit] = field(default_factory=list)
-    camera_department: list[Credit] = field(default_factory=list)
-    animation_department: list[Credit] = field(default_factory=list)
-    casting_department: list[Credit] = field(default_factory=list)
-    costume_department: list[Credit] = field(default_factory=list)
-    location_management: list[Credit] = field(default_factory=list)
-    music_department: list[Credit] = field(default_factory=list)
-    script_department: list[Credit] = field(default_factory=list)
-    transportation_department: list[Credit] = field(default_factory=list)
-    additional_crew: list[Credit] = field(default_factory=list)
-    thanks: list[Credit] = field(default_factory=list)
+    cast: list[CastCredit] = field(default_factory=list)
+    directors: list[CrewCredit] = field(default_factory=list)
+    writers: list[CrewCredit] = field(default_factory=list)
+    producers: list[CrewCredit] = field(default_factory=list)
+    composers: list[CrewCredit] = field(default_factory=list)
+    cinematographers: list[CrewCredit] = field(default_factory=list)
+    editors: list[CrewCredit] = field(default_factory=list)
+    casting_directors: list[CrewCredit] = field(default_factory=list)
+    production_designers: list[CrewCredit] = field(default_factory=list)
+    art_directors: list[CrewCredit] = field(default_factory=list)
+    set_decorators: list[CrewCredit] = field(default_factory=list)
+    costume_designers: list[CrewCredit] = field(default_factory=list)
+    makeup_department: list[CrewCredit] = field(default_factory=list)
+    production_management: list[CrewCredit] = field(default_factory=list)
+    assistant_directors: list[CrewCredit] = field(default_factory=list)
+    art_department: list[CrewCredit] = field(default_factory=list)
+    sound_department: list[CrewCredit] = field(default_factory=list)
+    special_effects: list[CrewCredit] = field(default_factory=list)
+    visual_effects: list[CrewCredit] = field(default_factory=list)
+    stunts: list[CrewCredit] = field(default_factory=list)
+    choreographers: list[CrewCredit] = field(default_factory=list)
+    animation_department: list[CrewCredit] = field(default_factory=list)
+    camera_department: list[CrewCredit] = field(default_factory=list)
+    casting_department: list[CrewCredit] = field(default_factory=list)
+    costume_department: list[CrewCredit] = field(default_factory=list)
+    editorial_department: list[CrewCredit] = field(default_factory=list)
+    location_management: list[CrewCredit] = field(default_factory=list)
+    music_department: list[CrewCredit] = field(default_factory=list)
+    production_department: list[CrewCredit] = field(default_factory=list)
+    script_department: list[CrewCredit] = field(default_factory=list)
+    transportation_department: list[CrewCredit] = field(default_factory=list)
+    additional_crew: list[CrewCredit] = field(default_factory=list)
+    thanks: list[CrewCredit] = field(default_factory=list)
+
+    akas: list[AKA] = field(default_factory=list)
+
+    certification: Certification | None = None
+    advisories: Advisories | None = None
 
     @property
     def countries(self) -> list[str]:
@@ -188,7 +205,7 @@ class _Title:
     @property
     def sort_title(self) -> str:
         if len(self.language_codes) > 0:
-            primary_lang = self.language_codes[0].upper()
+            primary_lang: str = self.language_codes[0].upper()
             articles = linguistics.ARTICLES.get(primary_lang)
             if articles is not None:
                 first, *rest = self.title.split(" ")
@@ -240,62 +257,36 @@ class VideoGame(_Title):
     type_id: Literal["videoGame"] = "videoGame"
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TVEpisode(_TimedTitle):
     type_id: Literal["tvEpisode"] = "tvEpisode"
-    series: Union[TVSeries, TVMiniSeries, None] = None
-    season: int | None = None
-    episode: int | None = None
+    series: TVSeries | TVMiniSeries | None = None
+    season: str | None = None
+    episode: str | None = None
     release_date: date | None = None
-    year: int | None = None
-    previous_episode: str | None = None
-    next_episode: str | None = None
+    previous_episode_id: str | None = None
+    next_episode_id: str | None = None
 
 
 @dataclass(kw_only=True)
-class _TVSeriesBase(_TimedTitle):
+class _TVSeries(_TimedTitle):
     end_year: int | None = None
-    episode_count: int | None = None
-    episodes: list[TVEpisode] = field(default_factory=list)
-    creators: list[Credit] = field(default_factory=list)
-
-    def get_episodes_by_season(self, season: int) -> list[TVEpisode]:
-        return [ep for ep in self.episodes if ep.season == season]
-
-    def get_episodes_by_year(self, year: int) -> list[TVEpisode]:
-        return [ep for ep in self.episodes if ep.year == year]
-
-    def get_episode(self, season: int, episode: int) -> TVEpisode | None:
-        return next(
-            (
-                ep
-                for ep in self.episodes
-                if ep.season == season and ep.episode == episode
-            ),
-            None,
-        )
-
-    def add_episodes(self, new_episodes: list[TVEpisode]) -> None:
-        existing_episodes_keys = {
-            (ep.season, ep.episode) for ep in self.episodes
-        }
-        for ep in new_episodes:
-            if (ep.season, ep.episode) not in existing_episodes_keys:
-                self.episodes.append(ep)
+    seasons: list[str] = field(default_factory=list)
+    episodes: dict[str, dict[str, TVEpisode]] = field(default_factory=dict)
+    creators: list[CrewCredit] = field(default_factory=list)
 
 
 @dataclass(kw_only=True)
-class TVSeries(_TVSeriesBase):
+class TVSeries(_TVSeries):
     type_id: Literal["tvSeries"] = "tvSeries"
-    season_count: int | None = None
 
 
 @dataclass(kw_only=True)
-class TVMiniSeries(_TVSeriesBase):
+class TVMiniSeries(_TVSeries):
     type_id: Literal["tvMiniSeries"] = "tvMiniSeries"
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TVSpecial(_TimedTitle):
     type_id: Literal["tvSpecial"] = "tvSpecial"
 
@@ -406,11 +397,11 @@ class SortCriteria:
 
 
 @dataclass
-class RangeFilter[T: Union[int, float, str]]:
+class RangeFilter(Generic[T]):
     """Generic range filter for numeric or str values."""
 
-    min_value: Optional[T] = None
-    max_value: Optional[T] = None
+    min_value: T | None = None
+    max_value: T | None = None
 
     def to_param_string(self) -> str:
         """Convert range to IMDb parameter string format."""
@@ -423,14 +414,14 @@ class RangeFilter[T: Union[int, float, str]]:
 class SearchFilters:
     """Container for all search filter criteria."""
 
-    title_types: Optional[List[str]] = None
-    genres: Optional[List[str]] = None
-    countries: Optional[List[str]] = None
-    languages: Optional[List[str]] = None
-    release_date: Optional[RangeFilter[str]] = None
-    user_rating: Optional[RangeFilter[float]] = None
-    votes: Optional[RangeFilter[int]] = None
-    runtime: Optional[RangeFilter[int]] = None
+    title_types: list[str] | None = None
+    genres: list[str] | None = None
+    countries: list[str] | None = None
+    languages: list[str] | None = None
+    release_date: RangeFilter[str] | None = None
+    user_rating: RangeFilter[float] | None = None
+    votes: RangeFilter[int] | None = None
+    runtime: RangeFilter[int] | None = None
     adult: bool = True
 
     def to_url_params(self) -> dict[str, str]:

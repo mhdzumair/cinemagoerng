@@ -1,11 +1,10 @@
-# Copyright 2024 H. Turgut Uyar <uyar@tekir.org>
+# Copyright 2024-2025 H. Turgut Uyar <uyar@tekir.org>
 #
 # This file is part of CinemagoerNG.
 #
 # CinemagoerNG is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 3 of the License, or
-# (at your option) any later version.
+# the Free Software Foundation, version 3.
 #
 # CinemagoerNG is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,13 +12,17 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with CinemagoerNG.  If not, see <http://www.gnu.org/licenses/>.
+# along with CinemagoerNG.  If not, see <https://www.gnu.org/licenses/>.
 
+import importlib.metadata
 import sys
 import textwrap
 from argparse import ArgumentParser
+from http import HTTPStatus
 
-from cinemagoerng import __version__, web
+import httpx
+
+from cinemagoerng import web as imdb
 
 
 _INDENT = "  "
@@ -27,13 +30,15 @@ _LINE_WIDTH = 72
 
 
 def get_title(imdb_num: int, taglines: bool = False) -> None:
-    item = web.get_title(f"tt{imdb_num:07d}")
-    if item is None:
-        print("No title with this IMDb number was found.")
+    try:
+        item = imdb.get_title(f"tt{imdb_num:07d}")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == HTTPStatus.NOT_FOUND:
+            print("No title with this IMDb number was found.")
         sys.exit()
 
     if taglines:
-        web.update_title(item, page="taglines", keys=["taglines"])
+        imdb.set_taglines(item)
 
     print(f"Title: {item.title} ({item.__class__.__name__})")
 
@@ -88,7 +93,9 @@ def get_title(imdb_num: int, taglines: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = ArgumentParser(description="Retrieve data from the IMDb.")
-    parser.add_argument("--version", action="version", version=__version__)
+
+    version = importlib.metadata.version("cinemagoerng")
+    parser.add_argument("--version", action="version", version=version)
 
     command = parser.add_subparsers(metavar="command")
     command.required = True
