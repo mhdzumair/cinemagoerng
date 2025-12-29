@@ -56,12 +56,16 @@ class HTTPClient:
         self,
         url: str,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
     ) -> str:
         """Fetch URL synchronously."""
-        with httpx.Client(
-            timeout=self.timeout,
-            follow_redirects=True,
-        ) as client:
+        kwargs: dict[str, Any] = {
+            "timeout": self.timeout,
+            "follow_redirects": True,
+        }
+        if httpx_kwargs:
+            kwargs.update(httpx_kwargs)
+        with httpx.Client(**kwargs) as client:
             response = client.get(url, headers=self._get_headers(url, headers))
             response.raise_for_status()
             return response.text
@@ -70,12 +74,16 @@ class HTTPClient:
         self,
         url: str,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
     ) -> str:
         """Fetch URL asynchronously."""
-        async with httpx.AsyncClient(
-            timeout=self.timeout,
-            follow_redirects=True,
-        ) as client:
+        kwargs: dict[str, Any] = {
+            "timeout": self.timeout,
+            "follow_redirects": True,
+        }
+        if httpx_kwargs:
+            kwargs.update(httpx_kwargs)
+        async with httpx.AsyncClient(**kwargs) as client:
             response = await client.get(
                 url, headers=self._get_headers(url, headers)
             )
@@ -151,12 +159,15 @@ def _scrape(
         *,
         context: Mapping[str, Any],
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     url = _get_url(spec, context=context)
     request_headers = headers if headers is not None else {}
     if spec.graphql is not None:
         request_headers["Content-Type"] = "application/json"
-    document = _http_client.fetch(url, headers=request_headers)
+    document = _http_client.fetch(
+        url, headers=request_headers, httpx_kwargs=httpx_kwargs
+    )
     return spec.scrape(document, doctype=spec.doctype)
 
 
@@ -165,12 +176,15 @@ async def _scrape_async(
         *,
         context: Mapping[str, Any],
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     url = _get_url(spec, context=context)
     request_headers = headers if headers is not None else {}
     if spec.graphql is not None:
         request_headers["Content-Type"] = "application/json"
-    document = await _http_client.fetch_async(url, headers=request_headers)
+    document = await _http_client.fetch_async(
+        url, headers=request_headers, httpx_kwargs=httpx_kwargs
+    )
     return spec.scrape(document, doctype=spec.doctype)
 
 
@@ -183,11 +197,14 @@ def get_title(
         imdb_id: str,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> model.Title:
     """Get title information synchronously."""
     spec = _spec("title_reference")
     context = {"imdb_id": imdb_id}
-    data = _scrape(spec=spec, context=context, headers=headers)
+    data = _scrape(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     return deserialize(data, model.Title)
 
 
@@ -195,11 +212,14 @@ async def get_title_async(
         imdb_id: str,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> model.Title:
     """Get title information asynchronously."""
     spec = _spec("title_reference")
     context = {"imdb_id": imdb_id}
-    data = await _scrape_async(spec=spec, context=context, headers=headers)
+    data = await _scrape_async(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     return deserialize(data, model.Title)
 
 
@@ -212,11 +232,14 @@ def set_taglines(
         title: model.Title,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with taglines synchronously."""
     spec = _spec("title_taglines")
     context = {"imdb_id": title.imdb_id}
-    data = _scrape(spec=spec, context=context, headers=headers)
+    data = _scrape(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     taglines = data.get("taglines")
     if taglines is not None:
         title.taglines = data["taglines"]
@@ -226,11 +249,14 @@ async def set_taglines_async(
         title: model.Title,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with taglines asynchronously."""
     spec = _spec("title_taglines")
     context = {"imdb_id": title.imdb_id}
-    data = await _scrape_async(spec=spec, context=context, headers=headers)
+    data = await _scrape_async(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     taglines = data.get("taglines")
     if taglines is not None:
         title.taglines = data["taglines"]
@@ -246,6 +272,7 @@ def set_akas(
         *,
         spec: Spec | None = None,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with AKAs (alternative titles) synchronously."""
     if spec is None:
@@ -254,12 +281,13 @@ def set_akas(
     assert g_params is not None, g_params
     g_vars = g_params["variables"]
     context: dict[str, Any] = {"imdb_id": title.imdb_id} | g_vars
-    data = _scrape(spec, context=context, headers=headers)
+    data = _scrape(spec, context=context, headers=headers,
+                   httpx_kwargs=httpx_kwargs)
     akas = [deserialize(aka, model.AKA) for aka in data.get("akas", [])]
     title.akas.extend(akas)
     if data.get("has_next_page", False):
         g_vars["after"] = data["end_cursor"]
-        set_akas(title, spec=spec, headers=headers)
+        set_akas(title, spec=spec, headers=headers, httpx_kwargs=httpx_kwargs)
 
 
 async def set_akas_async(
@@ -267,6 +295,7 @@ async def set_akas_async(
         *,
         spec: Spec | None = None,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with AKAs (alternative titles) asynchronously."""
     if spec is None:
@@ -275,12 +304,15 @@ async def set_akas_async(
     assert g_params is not None, g_params
     g_vars = g_params["variables"]
     context: dict[str, Any] = {"imdb_id": title.imdb_id} | g_vars
-    data = await _scrape_async(spec, context=context, headers=headers)
+    data = await _scrape_async(spec, context=context, headers=headers,
+                               httpx_kwargs=httpx_kwargs)
     akas = [deserialize(aka, model.AKA) for aka in data.get("akas", [])]
     title.akas.extend(akas)
     if data.get("has_next_page", False):
         g_vars["after"] = data["end_cursor"]
-        await set_akas_async(title, spec=spec, headers=headers)
+        await set_akas_async(
+            title, spec=spec, headers=headers, httpx_kwargs=httpx_kwargs
+        )
 
 
 # =========================================================================
@@ -292,11 +324,14 @@ def set_parental_guide(
         title: model.Title,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with parental guide information synchronously."""
     spec = _spec("title_parental_guide")
     context = {"imdb_id": title.imdb_id}
-    data = _scrape(spec=spec, context=context, headers=headers)
+    data = _scrape(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     title.certification = deserialize(
         data["certification"],
         model.Certification,
@@ -308,11 +343,14 @@ async def set_parental_guide_async(
         title: model.Title,
         *,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update title with parental guide information asynchronously."""
     spec = _spec("title_parental_guide")
     context = {"imdb_id": title.imdb_id}
-    data = await _scrape_async(spec=spec, context=context, headers=headers)
+    data = await _scrape_async(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     title.certification = deserialize(
         data["certification"],
         model.Certification,
@@ -330,11 +368,14 @@ def set_episodes(
         *,
         season: str,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update TV series with episodes for a season synchronously."""
     spec = _spec("title_episodes")
     context = {"imdb_id": title.imdb_id, "season": season}
-    data = _scrape(spec=spec, context=context, headers=headers)
+    data = _scrape(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     episodes = data.get("episodes")
     if episodes is not None:
         title.episodes[season] = deserialize(
@@ -348,17 +389,195 @@ async def set_episodes_async(
         *,
         season: str,
         headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Update TV series with episodes for a season asynchronously."""
     spec = _spec("title_episodes")
     context = {"imdb_id": title.imdb_id, "season": season}
-    data = await _scrape_async(spec=spec, context=context, headers=headers)
+    data = await _scrape_async(
+        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    )
     episodes = data.get("episodes")
     if episodes is not None:
         title.episodes[season] = deserialize(
             episodes,
             dict[str, model.TVEpisode],
         )
+
+
+# =========================================================================
+# SET ALL EPISODES (GRAPHQL PAGINATION)
+# =========================================================================
+
+_EPISODES_GRAPHQL_HASH = (
+    "e5b755e1254e3bc3a36b34aff729b1d107a63263dec628a8f59935c9e778c70e"
+)
+
+
+def _build_episodes_graphql_url(
+    imdb_id: str,
+    after: str = "",
+    first: int = 250,
+    *,
+    seasons: list[str] | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+) -> str:
+    """
+    Build GraphQL URL for fetching episodes with pagination.
+
+    Args:
+        imdb_id: The IMDb ID of the TV series
+        after: Cursor for pagination (empty string for first page)
+        first: Number of episodes per page (max 250)
+        seasons: Optional list of season numbers to filter by
+        year_from: Optional start year for filtering episodes
+        year_to: Optional end year for filtering episodes
+    """
+    from urllib.parse import quote
+
+    variables: dict[str, Any] = {
+        "after": after,
+        "const": imdb_id,
+        "first": first,
+        "locale": "en-US",
+        "originalTitleText": False,
+        "returnUrl": "https://www.imdb.com/close_me",
+        "sort": {"by": "EPISODE_THEN_RELEASE", "order": "ASC"},
+    }
+
+    # Add filter if seasons or year range specified
+    if seasons is not None:
+        variables["filter"] = {"includeSeasons": seasons}
+    elif year_from is not None or year_to is not None:
+        filter_dict: dict[str, Any] = {}
+        if year_from is not None:
+            filter_dict["releasedOnOrAfter"] = {"year": year_from}
+        if year_to is not None:
+            filter_dict["releasedOnOrBefore"] = {"year": year_to}
+        variables["filter"] = filter_dict
+
+    extensions = {
+        "persistedQuery": {
+            "sha256Hash": _EPISODES_GRAPHQL_HASH,
+            "version": 1,
+        }
+    }
+    variables_json = quote(json.dumps(variables, separators=(",", ":")))
+    extensions_json = quote(json.dumps(extensions, separators=(",", ":")))
+    base_url = "https://caching.graphql.imdb.com/"
+    return (
+        f"{base_url}?operationName=TitleEpisodesSubPagePagination"
+        f"&variables={variables_json}&extensions={extensions_json}"
+    )
+
+
+def _add_episodes_from_data(
+    title: model.TVSeries | model.TVMiniSeries,
+    episodes_data: list[dict[str, Any]],
+) -> None:
+    """Add episodes from scraped data to title, avoiding duplicates."""
+    for ep_data in episodes_data:
+        episode = deserialize(ep_data, model.TVEpisode)
+        season_key = str(ep_data.get("season", "unknown"))
+        ep_num = str(ep_data.get("episode", "unknown"))
+
+        if season_key not in title.episodes:
+            title.episodes[season_key] = {}
+
+        # Only add if not already present (avoid duplicates)
+        if ep_num not in title.episodes[season_key]:
+            title.episodes[season_key][ep_num] = episode
+
+
+def set_all_episodes(
+        title: model.TVSeries | model.TVMiniSeries,
+        *,
+        seasons: list[str] | None = None,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> None:
+    """
+    Fetch all episodes for a TV series using GraphQL pagination.
+
+    This fetches episodes efficiently using paginated GraphQL requests.
+
+    Args:
+        title: The TV series to update with episodes
+        seasons: Optional list of season numbers to filter (e.g., ["1", "2"])
+        year_from: Optional start year to filter episodes
+        year_to: Optional end year to filter episodes
+        headers: Optional HTTP headers
+        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+    """
+    spec = _spec("title_episodes_with_pagination")
+    after = ""
+
+    while True:
+        url = _build_episodes_graphql_url(
+            title.imdb_id,
+            after=after,
+            seasons=seasons,
+            year_from=year_from,
+            year_to=year_to,
+        )
+        document = _http_client.fetch(
+            url, headers=headers, httpx_kwargs=httpx_kwargs
+        )
+        data = spec.scrape(document, doctype=spec.doctype)
+
+        _add_episodes_from_data(title, data.get("episodes", []))
+
+        if not data.get("has_next_page", False):
+            break
+        after = data.get("end_cursor", "")
+
+
+async def set_all_episodes_async(
+        title: model.TVSeries | model.TVMiniSeries,
+        *,
+        seasons: list[str] | None = None,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> None:
+    """
+    Fetch all episodes for a TV series using GraphQL pagination asynchronously.
+
+    This fetches episodes efficiently using paginated GraphQL requests.
+
+    Args:
+        title: The TV series to update with episodes
+        seasons: Optional list of season numbers to filter (e.g., ["1", "2"])
+        year_from: Optional start year to filter episodes
+        year_to: Optional end year to filter episodes
+        headers: Optional HTTP headers
+        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+    """
+    spec = _spec("title_episodes_with_pagination")
+    after = ""
+
+    while True:
+        url = _build_episodes_graphql_url(
+            title.imdb_id,
+            after=after,
+            seasons=seasons,
+            year_from=year_from,
+            year_to=year_to,
+        )
+        document = await _http_client.fetch_async(
+            url, headers=headers, httpx_kwargs=httpx_kwargs
+        )
+        data = spec.scrape(document, doctype=spec.doctype)
+
+        _add_episodes_from_data(title, data.get("episodes", []))
+
+        if not data.get("has_next_page", False):
+            break
+        after = data.get("end_cursor", "")
 
 
 # =========================================================================
@@ -451,6 +670,7 @@ def search_titles(
     total_count: int | None = 250,
     paginate: bool = False,
     headers: dict[str, str] | None = None,
+    httpx_kwargs: dict[str, Any] | None = None,
 ) -> list[model.Title]:
     """
     Search for titles on IMDb with advanced filtering options.
@@ -463,6 +683,7 @@ def search_titles(
         total_count: Total number of items to fetch (when paginate=True)
         paginate: Whether to fetch all pages of results
         headers: Optional HTTP headers
+        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
 
     Returns:
         List of Title objects
@@ -471,7 +692,8 @@ def search_titles(
     count = min(count, 100)
 
     url = _build_search_url(spec, query, filters, sort, count)
-    document = _http_client.fetch(url, headers=headers)
+    document = _http_client.fetch(url, headers=headers,
+                                  httpx_kwargs=httpx_kwargs)
     data = spec.scrape(document, doctype=spec.doctype)
 
     titles = _parse_search_results(data.get("results", []))
@@ -496,7 +718,8 @@ def search_titles(
         total_count is None or len(titles) < total_count
     ):
         url = _build_pagination_url(pagination_spec, graphql_vars)
-        document = _http_client.fetch(url, headers=headers)
+        document = _http_client.fetch(url, headers=headers,
+                                      httpx_kwargs=httpx_kwargs)
         page_data = pagination_spec.scrape(
             document, doctype=pagination_spec.doctype
         )
@@ -520,6 +743,7 @@ async def search_titles_async(
     total_count: int | None = 250,
     paginate: bool = False,
     headers: dict[str, str] | None = None,
+    httpx_kwargs: dict[str, Any] | None = None,
 ) -> list[model.Title]:
     """
     Search for titles on IMDb asynchronously with advanced filtering options.
@@ -532,6 +756,7 @@ async def search_titles_async(
         total_count: Total number of items to fetch (when paginate=True)
         paginate: Whether to fetch all pages of results
         headers: Optional HTTP headers
+        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
 
     Returns:
         List of Title objects
@@ -540,7 +765,8 @@ async def search_titles_async(
     count = min(count, 100)
 
     url = _build_search_url(spec, query, filters, sort, count)
-    document = await _http_client.fetch_async(url, headers=headers)
+    document = await _http_client.fetch_async(url, headers=headers,
+                                              httpx_kwargs=httpx_kwargs)
     data = spec.scrape(document, doctype=spec.doctype)
 
     titles = _parse_search_results(data.get("results", []))
@@ -565,7 +791,8 @@ async def search_titles_async(
         total_count is None or len(titles) < total_count
     ):
         url = _build_pagination_url(pagination_spec, graphql_vars)
-        document = await _http_client.fetch_async(url, headers=headers)
+        document = await _http_client.fetch_async(url, headers=headers,
+                                                  httpx_kwargs=httpx_kwargs)
         page_data = pagination_spec.scrape(
             document, doctype=pagination_spec.doctype
         )

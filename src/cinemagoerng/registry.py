@@ -156,6 +156,7 @@ def parse_credit_notes(value: str) -> list[str]:
 
 transformers: dict[str, Transformer] = {
     "str": str,
+    "int": int,
     "lower": str.lower,
     "decimal": lambda x: Decimal(str(x)),
     "make_dict": make_dict,

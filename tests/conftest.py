@@ -3,7 +3,7 @@ import pytest
 import copy
 import json
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import cinemagoerng.web
 
@@ -28,6 +28,8 @@ CACHE_KEY_IGNORED_VARS = {
     "isAutoTranslationEnabled",
     "locale",
     "originalTitleText",
+    "returnUrl",  # Contains URL with slashes
+    "sort",  # Dict value, constant
 }
 
 
@@ -51,7 +53,7 @@ def get_cache_key(url: str, *, headers: dict[str, str] | None = None) -> str:
                     g_op = q_value
                 case "variables":
                     q_vars = q_vars | {
-                        k: v for k, v in json.loads(q_value).items()
+                        k: v for k, v in json.loads(unquote(q_value)).items()
                         if k not in CACHE_KEY_IGNORED_VARS
                     }
                 case "extensions":
@@ -76,14 +78,18 @@ def get_cache_key(url: str, *, headers: dict[str, str] | None = None) -> str:
     return f"{path}{suffix}"
 
 
-def fetch_cached(url: str, headers: dict[str, str] | None = None) -> str:
+def fetch_cached(
+    url: str,
+    headers: dict[str, str] | None = None,
+    httpx_kwargs: dict | None = None,  # Accept but ignore for caching
+) -> str:
     cache_key = get_cache_key(url, headers=headers)
     cache_path = cache_dir / cache_key
     if cache_key == "title_tt0000001_reference.html":
         cache_path.unlink(missing_ok=True)
     if cache_path.exists():
         return cache_path.read_text(encoding="utf-8")
-    content = fetch_orig(url, headers=headers)
+    content = fetch_orig(url, headers=headers, httpx_kwargs=httpx_kwargs)
     cache_path.write_text(content, encoding="utf-8")
     return content
 

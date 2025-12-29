@@ -348,6 +348,7 @@ def test_title_reference_parser_should_set_release_date_for_episode(imdb_id, rel
     ("tt0133093", date(1999, 3, 31)),  # The Matrix
     ("tt0468569", date(2008, 7, 18)),  # The Dark Knight
     ("tt3629794", None),  # Aslan (no release date)
+    ("tt0944947", date(2011, 4, 17)),  # Game of Thrones
 ])
 def test_title_reference_parser_should_set_release_date(imdb_id, release_date):
     parsed = imdb.get_title(imdb_id=imdb_id)
