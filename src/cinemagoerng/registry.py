@@ -154,12 +154,20 @@ def parse_credit_notes(value: str) -> list[str]:
     return _re_parenthesized.findall(value)
 
 
+def make_default_plot(value: str | None) -> dict[str, str]:
+    """Convert a plot string to default language dict format."""
+    if value is None:
+        return {}
+    return {"en": value}
+
+
 transformers: dict[str, Transformer] = {
     "str": str,
     "int": int,
     "lower": str.lower,
     "decimal": lambda x: Decimal(str(x)),
     "make_dict": make_dict,
+    "make_default_plot": make_default_plot,
     "date": make_date,
     "unescape": html.unescape,
     "div60": lambda x: x // 60,

@@ -26,7 +26,6 @@
     }
   },
   "doctype": "json",
-  "path_type": "jmespath",
   "rules": [
     {
       "key": "episodes",

@@ -2,7 +2,6 @@
   "version": "20240526",
   "url": "https://www.imdb.com/search/title/?%(url_params)s",
   "doctype": "html",
-  "path_type": "jmespath",
   "pre": [
 	"parse_next_data"
   ],

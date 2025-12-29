@@ -2,7 +2,6 @@
   "version": "20240703",
   "url": "https://caching.graphql.imdb.com/?operationName=AdvancedTitleSearch&variables=%(variables)s&extensions=%(extensions)s",
   "doctype": "json",
-  "path_type": "jmespath",
   "rules": [
 	{
 	  "key": "results",
