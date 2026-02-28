@@ -79,13 +79,13 @@ class AKA:
     def country(self) -> str | None:
         if self.country_code is None:
             return None
-        return lookup.COUNTRY_CODES[self.country_code]
+        return lookup.COUNTRY_CODES.get(self.country_code, None)
 
     @property
     def language(self) -> str | None:
         if self.language_code is None:
             return None
-        return lookup.LANGUAGE_CODES[self.language_code.upper()]
+        return lookup.LANGUAGE_CODES.get(self.language_code.upper(), None)
 
 
 @dataclass(kw_only=True)
