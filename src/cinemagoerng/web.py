@@ -604,63 +604,152 @@ def _parse_search_results(results: list[dict]) -> list[model.Title]:
 def _build_search_url(
     spec: Spec,
     query: str,
-    filters: model.SearchFilters | None,
-    sort: model.SortCriteria,
-    count: int,
 ) -> str:
     """Build search URL with parameters."""
     params: dict[str, Any] = {
-        "title": query,
-        "count": count,
-        "sort": sort.to_url_param(),
+        "q": query,
+        "s": "tt",
     }
-    if filters:
-        params.update(filters.to_url_params())
     url_params = urlencode(params)
     return spec.url % {"url_params": url_params}
 
 
-def _prepare_graphql_pagination(
-    data: dict,
-    query: str,
+def _parse_year_bound(value: str | None) -> int | None:
+    if value is None:
+        return None
+    year_text = value.split("-", 1)[0]
+    try:
+        return int(year_text)
+    except ValueError:
+        return None
+
+
+def _title_matches_filters(
+    title: model.Title,
+    filters: model.SearchFilters,
+) -> bool:
+    if filters.title_types and title.type_id not in filters.title_types:
+        return False
+
+    if filters.genres:
+        title_genres = {genre.lower() for genre in title.genres}
+        required_genres = {genre.lower() for genre in filters.genres}
+        if not required_genres.issubset(title_genres):
+            return False
+
+    if filters.release_date:
+        if title.year is None:
+            return False
+        min_year = _parse_year_bound(filters.release_date.min_value)
+        max_year = _parse_year_bound(filters.release_date.max_value)
+        if min_year is not None and title.year < min_year:
+            return False
+        if max_year is not None and title.year > max_year:
+            return False
+
+    if filters.user_rating:
+        if title.rating is None:
+            return False
+        rating = float(title.rating)
+        if (
+            filters.user_rating.min_value is not None
+            and rating < filters.user_rating.min_value
+        ):
+            return False
+        if (
+            filters.user_rating.max_value is not None
+            and rating > filters.user_rating.max_value
+        ):
+            return False
+
+    if filters.votes:
+        vote_count = title.vote_count
+        if (
+            filters.votes.min_value is not None
+            and vote_count < filters.votes.min_value
+        ):
+            return False
+        if (
+            filters.votes.max_value is not None
+            and vote_count > filters.votes.max_value
+        ):
+            return False
+
+    if filters.runtime:
+        if title.runtime is None:
+            return False
+        if (
+            filters.runtime.min_value is not None
+            and title.runtime < filters.runtime.min_value
+        ):
+            return False
+        if (
+            filters.runtime.max_value is not None
+            and title.runtime > filters.runtime.max_value
+        ):
+            return False
+
+    return True
+
+
+def _apply_search_filters(
+    titles: list[model.Title],
     filters: model.SearchFilters | None,
+) -> list[model.Title]:
+    if filters is None:
+        return titles
+    return [
+        title
+        for title in titles
+        if _title_matches_filters(title, filters)
+    ]
+
+
+def _apply_search_sort(
+    titles: list[model.Title],
     sort: model.SortCriteria,
-    count: int,
-) -> dict[str, Any]:
-    """Prepare variables for GraphQL pagination query."""
-    variables: dict[str, Any] = {
-        "after": data.get("end_cursor"),
-        "first": count,
-        "locale": "en-US",
-        "titleTextConstraint": {"searchTerm": query},
-    }
+) -> list[model.Title]:
+    if sort.field in (model.SortField.POPULARITY, model.SortField.BOX_OFFICE):
+        return titles
 
-    if filters:
-        variables.update(filters.to_graphql_variables())
-
-    sort_field, sort_order = sort.to_graphql_params()
-    variables["sortBy"] = sort_field
-    variables["sortOrder"] = sort_order
-
-    return variables
-
-
-def _build_pagination_url(spec: Spec, graphql_vars: dict[str, Any]) -> str:
-    """Build GraphQL pagination URL."""
-    extensions = {
-        "persistedQuery": {
-            "sha256Hash": (
-                "60a7b8470b01671336ffa535b21a0a6cdaf50267fa2ab55b3e3772578a8c1f00"
+    reverse = sort.order is model.SortOrder.DESCENDING
+    if sort.field is model.SortField.ALPHABETICAL:
+        return sorted(
+            titles,
+            key=lambda title: title.sort_title.lower(),
+            reverse=reverse,
+        )
+    if sort.field is model.SortField.USER_RATING:
+        return sorted(
+            titles,
+            key=lambda title: (
+                float(title.rating)
+                if title.rating is not None else -1.0
             ),
-            "version": 1,
-        }
-    }
-    variables_json = json.dumps(graphql_vars, separators=(",", ":"))
-    extensions_json = json.dumps(extensions, separators=(",", ":"))
-    return spec.url % {
-        "variables": variables_json,
-        "extensions": extensions_json,
-    }
+            reverse=reverse,
+        )
+    if sort.field is model.SortField.NUM_VOTES:
+        return sorted(
+            titles,
+            key=lambda title: title.vote_count,
+            reverse=reverse,
+        )
+    if sort.field is model.SortField.RUNTIME:
+        return sorted(
+            titles,
+            key=lambda title: (
+                title.runtime
+                if title.runtime is not None else -1
+            ),
+            reverse=reverse,
+        )
+    if sort.field is model.SortField.YEAR:
+        return sorted(
+            titles,
+            key=lambda title: title.year if title.year is not None else -1,
+            reverse=reverse,
+        )
+    return titles
 
 
 def search_titles(
@@ -693,47 +782,22 @@ def search_titles(
     spec = _spec("title_search")
     count = min(count, 100)
 
-    url = _build_search_url(spec, query, filters, sort, count)
+    url = _build_search_url(spec, query)
     document = _http_client.fetch(url, headers=headers,
                                   httpx_kwargs=httpx_kwargs)
     data = spec.scrape(document, doctype=spec.doctype)
 
     titles = _parse_search_results(data.get("results", []))
+    titles = _apply_search_filters(titles, filters)
+    titles = _apply_search_sort(titles, sort)
 
     if not paginate:
+        return titles[:count]
+
+    # The /find endpoint currently exposes a single result page.
+    if total_count is None:
         return titles
-
-    # Check if there are more results
-    total_results = data.get("total_results", 0)
-    has_next_page = len(data.get("results", [])) < total_results
-
-    if not has_next_page:
-        return titles
-
-    # Continue with GraphQL pagination
-    pagination_spec = _spec("title_search_with_pagination")
-    graphql_vars = _prepare_graphql_pagination(
-        data, query, filters, sort, count
-    )
-
-    while has_next_page and (
-        total_count is None or len(titles) < total_count
-    ):
-        url = _build_pagination_url(pagination_spec, graphql_vars)
-        document = _http_client.fetch(url, headers=headers,
-                                      httpx_kwargs=httpx_kwargs)
-        page_data = pagination_spec.scrape(
-            document, doctype=pagination_spec.doctype
-        )
-
-        new_titles = _parse_search_results(page_data.get("results", []))
-        titles.extend(new_titles)
-
-        has_next_page = page_data.get("has_next_page", False)
-        if has_next_page:
-            graphql_vars["after"] = page_data.get("end_cursor")
-
-    return titles
+    return titles[:total_count]
 
 
 async def search_titles_async(
@@ -766,44 +830,19 @@ async def search_titles_async(
     spec = _spec("title_search")
     count = min(count, 100)
 
-    url = _build_search_url(spec, query, filters, sort, count)
+    url = _build_search_url(spec, query)
     document = await _http_client.fetch_async(url, headers=headers,
                                               httpx_kwargs=httpx_kwargs)
     data = spec.scrape(document, doctype=spec.doctype)
 
     titles = _parse_search_results(data.get("results", []))
+    titles = _apply_search_filters(titles, filters)
+    titles = _apply_search_sort(titles, sort)
 
     if not paginate:
+        return titles[:count]
+
+    # The /find endpoint currently exposes a single result page.
+    if total_count is None:
         return titles
-
-    # Check if there are more results
-    total_results = data.get("total_results", 0)
-    has_next_page = len(data.get("results", [])) < total_results
-
-    if not has_next_page:
-        return titles
-
-    # Continue with GraphQL pagination
-    pagination_spec = _spec("title_search_with_pagination")
-    graphql_vars = _prepare_graphql_pagination(
-        data, query, filters, sort, count
-    )
-
-    while has_next_page and (
-        total_count is None or len(titles) < total_count
-    ):
-        url = _build_pagination_url(pagination_spec, graphql_vars)
-        document = await _http_client.fetch_async(url, headers=headers,
-                                                  httpx_kwargs=httpx_kwargs)
-        page_data = pagination_spec.scrape(
-            document, doctype=pagination_spec.doctype
-        )
-
-        new_titles = _parse_search_results(page_data.get("results", []))
-        titles.extend(new_titles)
-
-        has_next_page = page_data.get("has_next_page", False)
-        if has_next_page:
-            graphql_vars["after"] = page_data.get("end_cursor")
-
-    return titles
+    return titles[:total_count]
