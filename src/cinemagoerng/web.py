@@ -20,7 +20,7 @@ from decimal import Decimal
 from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any, Mapping, NotRequired, TypedDict
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -29,6 +29,25 @@ from . import model, piculet, registry
 
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Firefox/102.0"
 _DEFAULT_TIMEOUT = 30.0
+_SUGGESTION_BASE_URL = "https://v3.sg.media-imdb.com/suggestion"
+
+_SUGGESTION_TYPE_MAP = {
+    "feature": "movie",
+    "movie": "movie",
+    "tv movie": "tvMovie",
+    "video": "video",
+    "video game": "videoGame",
+    "short": "short",
+    "tv short": "tvShort",
+    "tv series": "tvSeries",
+    "tv mini series": "tvMiniSeries",
+    "tv mini-series": "tvMiniSeries",
+    "tv episode": "tvEpisode",
+    "tv special": "tvSpecial",
+    "music video": "musicVideo",
+    "podcast series": "podcastSeries",
+    "podcast episode": "podcastEpisode",
+}
 
 
 class HTTPClient:
@@ -614,6 +633,125 @@ def _build_search_url(
     return spec.url % {"url_params": url_params}
 
 
+def _build_suggestion_url(query: str) -> str:
+    normalized = "_".join(query.lower().split())
+    slug = quote(normalized, safe="_")
+    first_char = "x"
+    if slug:
+        first = slug[0]
+        if first.isalnum():
+            first_char = first
+    return f"{_SUGGESTION_BASE_URL}/{first_char}/{slug}.json"
+
+
+def _parse_suggestion_year(
+    item: dict[str, Any],
+) -> tuple[int | None, int | None]:
+    start_year = item.get("y")
+    if isinstance(start_year, int):
+        return start_year, None
+
+    raw_range = item.get("yr")
+    if not isinstance(raw_range, str) or not raw_range:
+        return None, None
+
+    normalized = raw_range.replace("–", "-")
+    start_text, _, end_text = normalized.partition("-")
+
+    start = None
+    if start_text.isdigit():
+        start = int(start_text)
+
+    end = None
+    if end_text.isdigit():
+        end = int(end_text)
+    return start, end
+
+
+def _get_suggestion_type_id(item: dict[str, Any]) -> str | None:
+    raw_type_id = item.get("qid")
+    if isinstance(raw_type_id, str) and raw_type_id:
+        return raw_type_id
+
+    raw_type = item.get("q")
+    if isinstance(raw_type, str):
+        return _SUGGESTION_TYPE_MAP.get(raw_type.lower())
+    return None
+
+
+def _extract_suggestion_results(
+    payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    raw_items = payload.get("d")
+    if not isinstance(raw_items, list):
+        return []
+
+    results: list[dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+
+        imdb_id = item.get("id")
+        title = item.get("l")
+        if not isinstance(imdb_id, str) or not imdb_id.startswith("tt"):
+            continue
+        if not isinstance(title, str) or not title:
+            continue
+
+        type_id = _get_suggestion_type_id(item)
+        if type_id is None:
+            continue
+
+        result: dict[str, Any] = {
+            "imdb_id": imdb_id,
+            "type_id": type_id,
+            "title": title,
+        }
+
+        start_year, end_year = _parse_suggestion_year(item)
+        if start_year is not None:
+            result["year"] = start_year
+        if end_year is not None:
+            result["end_year"] = end_year
+
+        raw_image = item.get("i")
+        if isinstance(raw_image, dict):
+            image_url = raw_image.get("imageUrl")
+            if isinstance(image_url, str) and image_url:
+                result["primary_image"] = image_url
+
+        results.append(result)
+    return results
+
+
+def _search_titles_via_html(
+    query: str,
+    headers: dict[str, str] | None,
+    httpx_kwargs: dict[str, Any] | None,
+) -> list[model.Title]:
+    spec = _spec("title_search")
+    url = _build_search_url(spec, query)
+    document = _http_client.fetch(
+        url, headers=headers, httpx_kwargs=httpx_kwargs
+    )
+    data = spec.scrape(document, doctype=spec.doctype)
+    return _parse_search_results(data.get("results", []))
+
+
+async def _search_titles_via_html_async(
+    query: str,
+    headers: dict[str, str] | None,
+    httpx_kwargs: dict[str, Any] | None,
+) -> list[model.Title]:
+    spec = _spec("title_search")
+    url = _build_search_url(spec, query)
+    document = await _http_client.fetch_async(
+        url, headers=headers, httpx_kwargs=httpx_kwargs
+    )
+    data = spec.scrape(document, doctype=spec.doctype)
+    return _parse_search_results(data.get("results", []))
+
+
 def _parse_year_bound(value: str | None) -> int | None:
     if value is None:
         return None
@@ -632,6 +770,8 @@ def _title_matches_filters(
         return False
 
     if filters.genres:
+        if not title.genres:
+            return True
         title_genres = {genre.lower() for genre in title.genres}
         required_genres = {genre.lower() for genre in filters.genres}
         if not required_genres.issubset(title_genres):
@@ -639,7 +779,7 @@ def _title_matches_filters(
 
     if filters.release_date:
         if title.year is None:
-            return False
+            return True
         min_year = _parse_year_bound(filters.release_date.min_value)
         max_year = _parse_year_bound(filters.release_date.max_value)
         if min_year is not None and title.year < min_year:
@@ -649,7 +789,7 @@ def _title_matches_filters(
 
     if filters.user_rating:
         if title.rating is None:
-            return False
+            return True
         rating = float(title.rating)
         if (
             filters.user_rating.min_value is not None
@@ -677,7 +817,7 @@ def _title_matches_filters(
 
     if filters.runtime:
         if title.runtime is None:
-            return False
+            return True
         if (
             filters.runtime.min_value is not None
             and title.runtime < filters.runtime.min_value
@@ -779,17 +919,28 @@ def search_titles(
     Returns:
         List of Title objects
     """
-    spec = _spec("title_search")
     count = min(count, 100)
-
-    url = _build_search_url(spec, query)
-    document = _http_client.fetch(url, headers=headers,
-                                  httpx_kwargs=httpx_kwargs)
-    data = spec.scrape(document, doctype=spec.doctype)
-
-    titles = _parse_search_results(data.get("results", []))
+    suggestion_url = _build_suggestion_url(query)
+    try:
+        suggestion_document = _http_client.fetch(
+            suggestion_url, headers=headers, httpx_kwargs=httpx_kwargs
+        )
+        suggestion_data = json.loads(suggestion_document)
+        titles = _parse_search_results(
+            _extract_suggestion_results(suggestion_data)
+        )
+    except (httpx.HTTPError, ValueError):
+        titles = _search_titles_via_html(query, headers, httpx_kwargs)
     titles = _apply_search_filters(titles, filters)
     titles = _apply_search_sort(titles, sort)
+
+    if not titles and filters is not None:
+        try:
+            titles = _search_titles_via_html(query, headers, httpx_kwargs)
+            titles = _apply_search_filters(titles, filters)
+            titles = _apply_search_sort(titles, sort)
+        except httpx.HTTPError:
+            pass
 
     if not paginate:
         return titles[:count]
@@ -827,17 +978,32 @@ async def search_titles_async(
     Returns:
         List of Title objects
     """
-    spec = _spec("title_search")
     count = min(count, 100)
-
-    url = _build_search_url(spec, query)
-    document = await _http_client.fetch_async(url, headers=headers,
-                                              httpx_kwargs=httpx_kwargs)
-    data = spec.scrape(document, doctype=spec.doctype)
-
-    titles = _parse_search_results(data.get("results", []))
+    suggestion_url = _build_suggestion_url(query)
+    try:
+        suggestion_document = await _http_client.fetch_async(
+            suggestion_url, headers=headers, httpx_kwargs=httpx_kwargs
+        )
+        suggestion_data = json.loads(suggestion_document)
+        titles = _parse_search_results(
+            _extract_suggestion_results(suggestion_data)
+        )
+    except (httpx.HTTPError, ValueError):
+        titles = await _search_titles_via_html_async(
+            query, headers, httpx_kwargs
+        )
     titles = _apply_search_filters(titles, filters)
     titles = _apply_search_sort(titles, sort)
+
+    if not titles and filters is not None:
+        try:
+            titles = await _search_titles_via_html_async(
+                query, headers, httpx_kwargs
+            )
+            titles = _apply_search_filters(titles, filters)
+            titles = _apply_search_sort(titles, sort)
+        except httpx.HTTPError:
+            pass
 
     if not paginate:
         return titles[:count]
