@@ -752,10 +752,22 @@ async def _search_titles_via_html_async(
     return _parse_search_results(data.get("results", []))
 
 
-def _parse_year_bound(value: str | None) -> int | None:
+def _parse_year_bound(value: str | int | float | None) -> int | None:
     if value is None:
         return None
-    year_text = value.split("-", 1)[0]
+
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if not isinstance(value, str):
+        return None
+
+    year_text = value.strip().split("-", 1)[0]
+    if not year_text:
+        return None
     try:
         return int(year_text)
     except ValueError:
