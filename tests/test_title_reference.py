@@ -329,7 +329,7 @@ def test_title_reference_parser_should_set_season_and_episode_numbers_for_episod
 @pytest.mark.parametrize(("imdb_id", "prev_id", "next_id"), [
     ("tt1000252", "tt1000256", "tt1000259"),  # Doctor Who: Blink
     ("tt0562992", None, "tt0562997"),  # Doctor Who: Rose
-    ("tt2121965", "tt2121964", None),  # House M.D.: Everybody Dies
+    ("tt2121965", "tt2121964", "tt39387148"),  # House M.D.: Everybody Dies
 ])
 def test_title_reference_parser_should_set_previous_and_next_episodes_for_episode(imdb_id, prev_id, next_id):
     parsed = imdb.get_title(imdb_id=imdb_id)
