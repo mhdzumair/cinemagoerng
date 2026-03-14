@@ -197,11 +197,18 @@ class _Title:
 
     @property
     def countries(self) -> list[str]:
-        return [lookup.COUNTRY_CODES[c] for c in self.country_codes]
+        return [
+            lookup.COUNTRY_CODES.get(c.upper(), c.upper())
+            for c in self.country_codes
+        ]
 
     @property
     def languages(self) -> list[str]:
-        return [lookup.LANGUAGE_CODES[c.upper()] for c in self.language_codes]
+        return [
+            language
+            for c in self.language_codes
+            if (language := lookup.LANGUAGE_CODES.get(c.upper())) is not None
+        ]
 
     @property
     def sort_title(self) -> str:

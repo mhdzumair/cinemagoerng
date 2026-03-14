@@ -574,6 +574,7 @@ LANGUAGE_CODES: Mapping[str, str] = MappingProxyType({
     "SRR": "Serer",
     "SSP": "Spanish Sign Language",
     "ST": "Sotho",
+    "SUX": "Sumerian",
     "SV": "Swedish",
     "SW": "Swahili",
     "SYL": "Sylheti",

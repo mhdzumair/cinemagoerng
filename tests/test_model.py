@@ -6,6 +6,7 @@ from cinemagoerng.model import AKA, CrewCredit, Movie, Person
 @pytest.mark.parametrize(("imdb_id", "title", "country_codes", "countries"), [
     ("tt0133093", "The Matrix", ["US", "AU"], ["United States", "Australia"]),
     ("tt0389150", "The Matrix Defence", ["GB"], ["United Kingdom"]),
+    ("tt0000000", "Unknown Country", ["xx"], ["XX"]),
 ])
 def test_title_countries_should_return_country_names(imdb_id, title, country_codes, countries):
     movie = Movie(imdb_id=imdb_id, title=title, country_codes=country_codes)
@@ -16,6 +17,8 @@ def test_title_countries_should_return_country_names(imdb_id, title, country_cod
     ("tt0133093", "The Matrix", ["en"], ["English"]),
     ("tt0043338", "Ace in the Hole", ["en", "es", "la"], ["English", "Spanish", "Latin"]),
     ("tt2971344", "Matrix: First Dream", ["zxx"], ["None"]),
+    ("tt0000001", "Unknown Language", ["sux"], ["Sumerian"]),
+    ("tt0000002", "Unknown Language", ["en", "iot", "es"], ["English", "Spanish"]),
 ])
 def test_title_languages_should_return_language_names(imdb_id, title, language_codes, languages):
     movie = Movie(imdb_id=imdb_id, title=title, language_codes=language_codes)
