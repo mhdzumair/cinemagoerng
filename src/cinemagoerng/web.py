@@ -324,6 +324,26 @@ class Spec(piculet.Spec):
     graphql: GraphQLParams | None = None
     doctype: piculet.DocType
 
+    def scrape(
+        self,
+        document: str | piculet.Node,
+        *,
+        doctype: piculet.DocType,
+    ) -> dict[str, Any]:
+        """
+        Scrape via Piculet; read IMDb __NEXT_DATA__ JSON from raw HTML first.
+        """
+        if (
+            isinstance(document, str)
+            and doctype == "html"
+            and self.pre == ["parse_next_data"]
+        ):
+            extracted_pre = registry.extract_next_data_from_html(document)
+            if extracted_pre is not None:
+                data = self.extract(extracted_pre)
+                return self.postprocess(data)
+        return super().scrape(document, doctype=doctype)
+
 
 SPECS_DIR = Path(__file__).parent / "specs"
 

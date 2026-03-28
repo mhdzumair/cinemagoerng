@@ -28,6 +28,38 @@ from .piculet import Node, Postprocessor, Preprocessor, Query, Transformer
 ########################################################################
 
 
+# Match opening tag for Next.js hydrated payload (attribute order may vary).
+_NEXT_DATA_SCRIPT_OPEN_RE = re.compile(
+    r"<script\b[^>]*\bid\s*=\s*[\"']__NEXT_DATA__[\"'][^>]*>",
+    re.IGNORECASE,
+)
+
+
+def extract_next_data_from_html(html: str) -> dict[str, Any] | None:
+    """
+    Parse the ``__NEXT_DATA__`` JSON object from raw HTML.
+
+    lxml/html parsing can truncate ``<script>`` contents when the embedded
+    JSON contains sequences that look like HTML (e.g. ``</script>`` in a
+    string, or very large payloads). Decoding from the original response
+    string with :meth:`json.JSONDecoder.raw_decode` avoids that.
+    """
+    match = _NEXT_DATA_SCRIPT_OPEN_RE.search(html)
+    if match is None:
+        return None
+    start = match.end()
+    while start < len(html) and html[start].isspace():
+        start += 1
+    if start >= len(html) or html[start] != "{":
+        return None
+    decoder = json.JSONDecoder()
+    try:
+        data, _end = decoder.raw_decode(html, start)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def parse_next_data(root: Node) -> Node:
     next_data = Query("//script[@id='__NEXT_DATA__']/text()").apply(root)
     return json.loads(next_data)
