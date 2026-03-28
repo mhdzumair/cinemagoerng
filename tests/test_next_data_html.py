@@ -13,19 +13,13 @@ def test_extract_next_data_from_html_simple() -> None:
     assert out == inner
 
 
-def test_extract_next_data_closing_script_sequence_inside_json_string() -> None:
-    """Sequences like </script> inside a JSON string must not truncate parsing."""
-    inner = {
-        "props": {"pageProps": {"hint": "</script>in_string"}},
-        "other": 2,
-    }
+def test_extract_next_data_stops_at_closing_script_tag() -> None:
+    """Decoder must not read past ``</script>`` into following HTML."""
+    inner = {"props": {"pageProps": {"k": 1}}, "other": 2}
     blob = json.dumps(inner, separators=(",", ":"))
     html = (
-        "<html><script "
-        'type="application/json" '
-        'id="__NEXT_DATA__">'
-        f"{blob}"
-        "</script></html>"
+        f'<script id="__NEXT_DATA__" type="application/json">{blob}</script>'
+        "<p>not-json</p>"
     )
     out = extract_next_data_from_html(html)
     assert out == inner

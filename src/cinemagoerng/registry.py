@@ -52,9 +52,17 @@ def extract_next_data_from_html(html: str) -> dict[str, Any] | None:
         start += 1
     if start >= len(html) or html[start] != "{":
         return None
+    # Do not decode past this script: raw_decode on the full document can
+    # run into later HTML if the payload is malformed or the tokenizer state
+    # drifts; IMDb/Next wire format does not include literal "</script>" inside
+    # the blob (uses \\u003c escapes).
+    end_rel = html.lower().find("</script>", start)
+    if end_rel == -1:
+        return None
+    chunk = html[start:end_rel].strip()
     decoder = json.JSONDecoder()
     try:
-        data, _end = decoder.raw_decode(html, start)
+        data, _end = decoder.raw_decode(chunk, 0)
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None
