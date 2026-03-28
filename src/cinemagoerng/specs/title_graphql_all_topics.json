@@ -1,0 +1,51 @@
+{
+  "version": "20260328",
+  "url": "https://caching.graphql.imdb.com/",
+  "graphql": {
+    "operationName": "TitleAllTopics",
+    "variables": {
+      "locale": "en-US",
+      "pageConst": "%(imdb_id)s"
+    },
+    "extensions": {
+      "persistedQuery": {
+        "sha256Hash": "cd24ecda5964689a2e7874bd21d7b66634dacae9177aec50d5e5f35c4a912941",
+        "version": 1
+      }
+    }
+  },
+  "doctype": "json",
+  "root": "data.title",
+  "rules": [
+    {
+      "key": "title",
+      "extractor": {
+        "path": "originalTitleText.text"
+      }
+    },
+    {
+      "key": "primary_image",
+      "extractor": {
+        "path": "primaryImage.url"
+      }
+    },
+    {
+      "key": "type_id",
+      "extractor": {
+        "path": "titleType.text",
+        "transforms": [
+          "imdb_title_type_text"
+        ]
+      }
+    },
+    {
+      "key": "rating",
+      "extractor": {
+        "path": "subNavRatings.aggregateRating",
+        "transforms": [
+          "decimal"
+        ]
+      }
+    }
+  ]
+}

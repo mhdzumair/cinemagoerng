@@ -76,6 +76,9 @@ cinemagoerng = "cinemagoerng:cli.main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: live HTTP to IMDb; may skip on WAF/block",
+]
 
 [tool.coverage.run]
 source_pkgs = ["cinemagoerng"]

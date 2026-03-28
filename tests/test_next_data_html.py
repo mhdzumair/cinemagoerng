@@ -14,13 +14,25 @@ def test_extract_next_data_from_html_simple() -> None:
 
 
 def test_extract_next_data_stops_at_closing_script_tag() -> None:
-    """Decoder must not read past ``</script>`` into following HTML."""
+    """Decoder must not read past the root JSON object into following HTML."""
     inner = {"props": {"pageProps": {"k": 1}}, "other": 2}
     blob = json.dumps(inner, separators=(",", ":"))
     html = (
         f'<script id="__NEXT_DATA__" type="application/json">{blob}</script>'
         "<p>not-json</p>"
     )
+    out = extract_next_data_from_html(html)
+    assert out == inner
+
+
+def test_extract_next_data_script_close_inside_json_string() -> None:
+    """``</script>`` inside a JSON string must not truncate the payload."""
+    inner = {
+        "props": {"pageProps": {"html": "foo </script> bar"}},
+        "buildId": "x",
+    }
+    blob = json.dumps(inner, separators=(",", ":"))
+    html = f'<script id="__NEXT_DATA__" type="application/json">{blob}</script>'
     out = extract_next_data_from_html(html)
     assert out == inner
 

@@ -26,6 +26,7 @@ CACHE_SUFFIXES = {
 
 CACHE_KEY_IGNORED_VARS = {
     "isAutoTranslationEnabled",
+    "isInMachineTranslateWeblab",
     "locale",
     "originalTitleText",
     "returnUrl",  # Contains URL with slashes
@@ -62,8 +63,13 @@ def get_cache_key(url: str, *, headers: dict[str, str] | None = None) -> str:
                     q_vars[q_key] = q_value
         if len(q_vars) > 0:
             if g_op is not None:
-                imdb_id = q_vars.pop("const")
-                path += f"title_{imdb_id}_{g_op}"
+                imdb_ref = None
+                for key in ("const", "pageConst", "titleId"):
+                    if key in q_vars:
+                        imdb_ref = q_vars.pop(key)
+                        break
+                if imdb_ref is not None:
+                    path += f"title_{imdb_ref}_{g_op}"
             q_query = "__".join(f"{k}_{v}" for k, v in q_vars.items())
             path += f"__{q_query}"
 
@@ -96,6 +102,12 @@ def fetch_cached(
 
 # Patch the HTTP client's fetch method for caching
 _http_client.fetch = fetch_cached
+
+
+@pytest.fixture
+def imdb_uncached_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use live IMDb HTTP for the test (bypass imdb-cache)."""
+    monkeypatch.setattr(_http_client, "fetch", fetch_orig)
 
 
 @pytest.fixture

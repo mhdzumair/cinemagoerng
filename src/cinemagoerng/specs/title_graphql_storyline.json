@@ -1,0 +1,65 @@
+{
+  "version": "20260328",
+  "url": "https://caching.graphql.imdb.com/",
+  "graphql": {
+    "operationName": "Title_Storyline",
+    "variables": {
+      "isInMachineTranslateWeblab": true,
+      "locale": "en-US",
+      "titleId": "%(imdb_id)s"
+    },
+    "extensions": {
+      "persistedQuery": {
+        "sha256Hash": "bbf29ee4ceeefcf2d0825e0e57e3821aa2e11166b7cf820e1b40fb21095d7b08",
+        "version": 1
+      }
+    }
+  },
+  "doctype": "json",
+  "root": "data.title",
+  "rules": [
+    {
+      "key": "genres",
+      "extractor": {
+        "foreach": "genres.genres[*]",
+        "path": "text"
+      }
+    },
+    {
+      "key": "taglines",
+      "extractor": {
+        "foreach": "taglines.edges[*]",
+        "path": "node.text"
+      }
+    },
+    {
+      "key": "certification",
+      "extractor": {
+        "rules": [
+          {
+            "key": "mpa_rating",
+            "extractor": {
+              "path": "certificate.rating"
+            }
+          },
+          {
+            "key": "mpa_rating_reason",
+            "extractor": {
+              "path": "certificate.ratingReason"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "key": "plot",
+      "extractor": {
+        "path": "outlines.edges[0].node.plotText.plaidHtml",
+        "transforms": [
+          "strip_html",
+          "make_default_plot"
+        ]
+      }
+    }
+  ]
+}

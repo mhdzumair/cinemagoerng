@@ -73,6 +73,13 @@ _IMDB_WWW_HTML_DEFAULT_HEADERS: dict[str, str] = {
     "Sec-Fetch-User": "?1",
 }
 
+# caching.graphql.imdb.com may return Midway auth HTML if these are missing.
+_IMDB_GRAPHQL_DEFAULT_HEADERS: dict[str, str] = {
+    "Accept": "application/graphql+json, application/json;q=0.9, */*;q=0.8",
+    "Referer": "https://www.imdb.com/",
+    "Origin": "https://www.imdb.com",
+}
+
 _SUGGESTION_TYPE_MAP = {
     "feature": "movie",
     "movie": "movie",
@@ -171,7 +178,9 @@ class HTTPClient:
             for key, value in _IMDB_WWW_HTML_DEFAULT_HEADERS.items():
                 headers.setdefault(key, value)
         if "graphql" in url:
-            headers["Content-Type"] = "application/json"
+            for key, value in _IMDB_GRAPHQL_DEFAULT_HEADERS.items():
+                headers.setdefault(key, value)
+            headers.setdefault("Content-Type", "application/json")
         return headers
 
     def _curl_request_kwargs(
@@ -301,8 +310,11 @@ class GraphQLVariables(TypedDict):
     const: NotRequired[str]
     first: NotRequired[int]
     isAutoTranslationEnabled: NotRequired[bool]
+    isInMachineTranslateWeblab: NotRequired[bool]
     locale: NotRequired[str]
     originalTitleText: NotRequired[bool]
+    pageConst: NotRequired[str]
+    titleId: NotRequired[str]
 
 
 class GraphQLParams(TypedDict):
@@ -364,15 +376,18 @@ def _spec(page: str, /) -> Spec:
 def _get_url(spec: Spec, context: Mapping[str, Any]) -> str:
     url_template = spec.url
     if spec.graphql is not None:
-        g_params = []
+        pairs: list[tuple[str, str]] = []
         for g_key, g_value in spec.graphql.items():
             match g_value:
                 case dict():
-                    g_dump = json.dumps(g_value, separators=(",", ":"))
-                    g_params.append(f"{g_key}={g_dump}")
+                    dumped = json.dumps(g_value, separators=(",", ":"))
+                    fragment = dumped % context
                 case _:
-                    g_params.append(f"{g_key}={g_value}")
-        url_template += "?" + "&".join(g_params)
+                    fragment = str(g_value)
+                    if "%(" in fragment:
+                        fragment = fragment % context
+            pairs.append((g_key, fragment))
+        return url_template + "?" + urlencode(pairs)
     return url_template % context
 
 
@@ -412,6 +427,91 @@ async def _scrape_async(
 
 # HTML specs tried in order for get_title / get_title_async (reference first).
 _TITLE_HTML_SPEC_ORDER: tuple[str, ...] = ("title_reference", "title_primary")
+
+_TITLE_GRAPHQL_ALL_TOPICS = "title_graphql_all_topics"
+_TITLE_GRAPHQL_STORYLINE = "title_graphql_storyline"
+
+
+def _merge_graphql_title_scrape_parts(
+        *parts: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge Piculet scrape dicts; later parts override when non-empty."""
+    merged: dict[str, Any] = {}
+    for part in parts:
+        for key, val in part.items():
+            if val is None:
+                continue
+            if val == [] or val == {}:
+                continue
+            merged[key] = val
+    return merged
+
+
+def _get_title_from_graphql(
+        imdb_id: str,
+        *,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> model.Title | None:
+    """Build a Title from IMDb caching GraphQL (persisted queries)."""
+    context = {"imdb_id": imdb_id}
+    try:
+        topics = _scrape(
+            spec=_spec(_TITLE_GRAPHQL_ALL_TOPICS),
+            context=context,
+            headers=headers,
+            httpx_kwargs=httpx_kwargs,
+        )
+    except Exception:
+        return None
+    try:
+        storyline = _scrape(
+            spec=_spec(_TITLE_GRAPHQL_STORYLINE),
+            context=context,
+            headers=headers,
+            httpx_kwargs=httpx_kwargs,
+        )
+    except Exception:
+        storyline = {}
+    merged = _merge_graphql_title_scrape_parts(topics, storyline)
+    merged["imdb_id"] = imdb_id.strip()
+    try:
+        return deserialize(merged, model.Title)
+    except Exception:
+        return None
+
+
+async def _get_title_from_graphql_async(
+        imdb_id: str,
+        *,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> model.Title | None:
+    context = {"imdb_id": imdb_id}
+    try:
+        topics = await _scrape_async(
+            spec=_spec(_TITLE_GRAPHQL_ALL_TOPICS),
+            context=context,
+            headers=headers,
+            httpx_kwargs=httpx_kwargs,
+        )
+    except Exception:
+        return None
+    try:
+        storyline = await _scrape_async(
+            spec=_spec(_TITLE_GRAPHQL_STORYLINE),
+            context=context,
+            headers=headers,
+            httpx_kwargs=httpx_kwargs,
+        )
+    except Exception:
+        storyline = {}
+    merged = _merge_graphql_title_scrape_parts(topics, storyline)
+    merged["imdb_id"] = imdb_id.strip()
+    try:
+        return deserialize(merged, model.Title)
+    except Exception:
+        return None
 
 
 def _title_data_from_suggestion_payload(
@@ -521,6 +621,7 @@ def get_title(
     """Get title information synchronously.
 
     Tries ``/title/{id}/reference/`` HTML, then canonical ``/title/{id}/``,
+    then IMDb caching GraphQL (``TitleAllTopics`` + ``Title_Storyline``),
     then the suggestion JSON API (minimal cast/plot/credits).
     """
     errors: list[Exception] = []
@@ -537,6 +638,11 @@ def get_title(
             return deserialize(data, model.Title)
         except Exception as exc:
             errors.append(exc)
+    gql_title = _get_title_from_graphql(
+        imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
+    )
+    if gql_title is not None:
+        return gql_title
     boot = _get_title_from_suggestion(
         imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
     )
@@ -568,6 +674,11 @@ async def get_title_async(
             return deserialize(data, model.Title)
         except Exception as exc:
             errors.append(exc)
+    gql_title = await _get_title_from_graphql_async(
+        imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
+    )
+    if gql_title is not None:
+        return gql_title
     boot = await _get_title_from_suggestion_async(
         imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
     )

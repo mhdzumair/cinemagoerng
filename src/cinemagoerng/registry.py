@@ -43,6 +43,12 @@ def extract_next_data_from_html(html: str) -> dict[str, Any] | None:
     JSON contains sequences that look like HTML (e.g. ``</script>`` in a
     string, or very large payloads). Decoding from the original response
     string with :meth:`json.JSONDecoder.raw_decode` avoids that.
+
+    The JSON payload may legally contain the substring ``</script>`` inside
+    string values (e.g. escaped plot HTML). Slicing at the first literal
+    ``</script>`` in the document therefore truncates the payload; the decoder
+    must run on the response string starting at ``{`` and stop at the end of
+    the root value (same boundary the browser uses for the script text node).
     """
     match = _NEXT_DATA_SCRIPT_OPEN_RE.search(html)
     if match is None:
@@ -52,17 +58,9 @@ def extract_next_data_from_html(html: str) -> dict[str, Any] | None:
         start += 1
     if start >= len(html) or html[start] != "{":
         return None
-    # Do not decode past this script: raw_decode on the full document can
-    # run into later HTML if the payload is malformed or the tokenizer state
-    # drifts; IMDb/Next wire format does not include literal "</script>" inside
-    # the blob (uses \\u003c escapes).
-    end_rel = html.lower().find("</script>", start)
-    if end_rel == -1:
-        return None
-    chunk = html[start:end_rel].strip()
     decoder = json.JSONDecoder()
     try:
-        data, _end = decoder.raw_decode(chunk, 0)
+        data, _end = decoder.raw_decode(html, start)
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None
@@ -201,6 +199,45 @@ def make_default_plot(value: str | None) -> dict[str, str]:
     return {"en": value}
 
 
+_re_html_tag = re.compile(r"<[^>]+>")
+
+
+def strip_html(value: str | None) -> str | None:
+    """Strip simple HTML tags (e.g. IMDb ``plaidHtml``) to plain text."""
+    if value is None:
+        return None
+    text = html.unescape(value)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    stripped = _re_html_tag.sub("", text).strip()
+    return stripped if stripped else None
+
+
+# Display strings from TitleAllTopics ``titleType.text`` → ``model.Title`` ids.
+_IMDB_TITLE_TYPE_TEXT_TO_ID: dict[str, str] = {
+    "feature": "movie",
+    "movie": "movie",
+    "tv movie": "tvMovie",
+    "video": "video",
+    "video game": "videoGame",
+    "short": "short",
+    "tv short": "tvShort",
+    "tv series": "tvSeries",
+    "tv mini series": "tvMiniSeries",
+    "tv mini-series": "tvMiniSeries",
+    "tv episode": "tvEpisode",
+    "tv special": "tvSpecial",
+    "music video": "musicVideo",
+    "podcast series": "podcastSeries",
+    "podcast episode": "podcastEpisode",
+}
+
+
+def imdb_title_type_text(value: str | None) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    return _IMDB_TITLE_TYPE_TEXT_TO_ID.get(value.strip().lower())
+
+
 transformers: dict[str, Transformer] = {
     "str": str,
     "int": int,
@@ -214,4 +251,6 @@ transformers: dict[str, Transformer] = {
     "credit_category": parse_credit_category,
     "credit_job": parse_credit_job,
     "credit_notes": parse_credit_notes,
+    "strip_html": strip_html,
+    "imdb_title_type_text": imdb_title_type_text,
 }
