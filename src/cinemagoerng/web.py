@@ -410,6 +410,103 @@ async def _scrape_async(
     return spec.scrape(document, doctype=spec.doctype)
 
 
+# HTML specs tried in order for get_title / get_title_async (reference first).
+_TITLE_HTML_SPEC_ORDER: tuple[str, ...] = ("title_reference", "title_primary")
+
+
+def _title_data_from_suggestion_payload(
+        imdb_id: str,
+        payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Map suggestion API JSON into a *title_reference*-like scrape dict."""
+    items = payload.get("d")
+    if not isinstance(items, list):
+        return None
+    needle = imdb_id.strip()
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        rid = raw.get("id")
+        if rid != needle:
+            continue
+        qid = raw.get("qid")
+        if not isinstance(qid, str) or not qid:
+            return None
+        image_block = raw.get("i")
+        img_url = None
+        if isinstance(image_block, dict):
+            img_url = image_block.get("imageUrl")
+        y_raw = raw.get("y")
+        year: int | None
+        if y_raw is None:
+            year = None
+        else:
+            try:
+                year = int(y_raw)
+            except (TypeError, ValueError):
+                year = None
+        title_text = raw.get("l")
+        return {
+            "imdb_id": rid,
+            "title": title_text if isinstance(title_text, str) else "",
+            "type_id": qid,
+            "year": year,
+            "primary_image": img_url,
+        }
+    return None
+
+
+def _get_title_from_suggestion(
+        imdb_id: str,
+        *,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> model.Title | None:
+    """Minimal title via v3.sg.media-imdb.com suggestion JSON."""
+    url = f"{_SUGGESTION_BASE_URL}/x/{quote(imdb_id.strip())}.json"
+    try:
+        body = _http_client.fetch(
+            url, headers=headers or {}, httpx_kwargs=httpx_kwargs
+        )
+        payload = json.loads(body)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    data = _title_data_from_suggestion_payload(imdb_id, payload)
+    if data is None:
+        return None
+    try:
+        return deserialize(data, model.Title)
+    except Exception:
+        return None
+
+
+async def _get_title_from_suggestion_async(
+        imdb_id: str,
+        *,
+        headers: dict[str, str] | None = None,
+        httpx_kwargs: dict[str, Any] | None = None,
+) -> model.Title | None:
+    url = f"{_SUGGESTION_BASE_URL}/x/{quote(imdb_id.strip())}.json"
+    try:
+        body = await _http_client.fetch_async(
+            url, headers=headers or {}, httpx_kwargs=httpx_kwargs
+        )
+        payload = json.loads(body)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    data = _title_data_from_suggestion_payload(imdb_id, payload)
+    if data is None:
+        return None
+    try:
+        return deserialize(data, model.Title)
+    except Exception:
+        return None
+
+
 # =========================================================================
 # GET TITLE
 # =========================================================================
@@ -421,13 +518,33 @@ def get_title(
         headers: dict[str, str] | None = None,
         httpx_kwargs: dict[str, Any] | None = None,
 ) -> model.Title:
-    """Get title information synchronously."""
-    spec = _spec("title_reference")
+    """Get title information synchronously.
+
+    Tries ``/title/{id}/reference/`` HTML, then canonical ``/title/{id}/``,
+    then the suggestion JSON API (minimal cast/plot/credits).
+    """
+    errors: list[Exception] = []
     context = {"imdb_id": imdb_id}
-    data = _scrape(
-        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    for spec_name in _TITLE_HTML_SPEC_ORDER:
+        try:
+            spec = _spec(spec_name)
+            data = _scrape(
+                spec=spec,
+                context=context,
+                headers=headers,
+                httpx_kwargs=httpx_kwargs,
+            )
+            return deserialize(data, model.Title)
+        except Exception as exc:
+            errors.append(exc)
+    boot = _get_title_from_suggestion(
+        imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
     )
-    return deserialize(data, model.Title)
+    if boot is not None:
+        return boot
+    if errors:
+        raise errors[-1]
+    raise RuntimeError(f"IMDb title fetch failed for {imdb_id!r}.")
 
 
 async def get_title_async(
@@ -436,13 +553,29 @@ async def get_title_async(
         headers: dict[str, str] | None = None,
         httpx_kwargs: dict[str, Any] | None = None,
 ) -> model.Title:
-    """Get title information asynchronously."""
-    spec = _spec("title_reference")
+    """Get title information asynchronously (see :func:`get_title`)."""
+    errors: list[Exception] = []
     context = {"imdb_id": imdb_id}
-    data = await _scrape_async(
-        spec=spec, context=context, headers=headers, httpx_kwargs=httpx_kwargs
+    for spec_name in _TITLE_HTML_SPEC_ORDER:
+        try:
+            spec = _spec(spec_name)
+            data = await _scrape_async(
+                spec=spec,
+                context=context,
+                headers=headers,
+                httpx_kwargs=httpx_kwargs,
+            )
+            return deserialize(data, model.Title)
+        except Exception as exc:
+            errors.append(exc)
+    boot = await _get_title_from_suggestion_async(
+        imdb_id, headers=headers, httpx_kwargs=httpx_kwargs
     )
-    return deserialize(data, model.Title)
+    if boot is not None:
+        return boot
+    if errors:
+        raise errors[-1]
+    raise RuntimeError(f"IMDb title fetch failed for {imdb_id!r}.")
 
 
 # =========================================================================
