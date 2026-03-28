@@ -16,7 +16,7 @@ def test_cli_should_report_correct_version(capsys):
 def test_cli_get_title_should_report_error_for_nonexisting_imdb_num(
     cov, capsys
 ):
-    if cov is None:
+    if not cov:
         pytest.skip("uses live network connection")
     with pytest.raises(SystemExit):
         cli.main(["get", "title", "133093133"])
@@ -25,7 +25,7 @@ def test_cli_get_title_should_report_error_for_nonexisting_imdb_num(
 
 
 def test_cli_get_title_should_fetch_page_in_coverage_mode(cov, capsys):
-    if cov is None:
+    if not cov:
         pytest.skip("uses live network connection")
     cli.main(["get", "title", "1"])
     std = capsys.readouterr()

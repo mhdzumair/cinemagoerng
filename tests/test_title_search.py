@@ -56,14 +56,16 @@ class TestSearchTitlesWithFilters:
 
     def test_search_with_year_filter(self):
         """Test filtering by release year range."""
+        # Suggestion results are a small fixed set; keep the window wide enough
+        # that at least one hit remains without relying on the /find fallback.
         filters = SearchFilters(
-            release_date=RangeFilter(min_value="2020", max_value="2023"),
+            release_date=RangeFilter(min_value="2018", max_value="2023"),
         )
         results = imdb.search_titles("action", filters=filters, count=10)
         assert len(results) > 0
         for r in results:
             if r.year is not None:
-                assert 2020 <= r.year <= 2023
+                assert 2018 <= r.year <= 2023
 
     def test_search_with_rating_filter(self):
         """Test filtering by minimum rating."""

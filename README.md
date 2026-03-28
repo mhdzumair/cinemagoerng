@@ -98,6 +98,59 @@ CinemagoerNG can retrieve various types of information:
 - Episode information (for TV series)
 - Parental guide
 
+## HTTP client, blocking, and proxies
+
+CinemagoerNG loads public IMDb pages and API-style endpoints using
+[curl_cffi](https://github.com/lwthiker/curl-impersonate), which can mimic
+browser TLS fingerprints and retries with several Chrome/Safari profiles when a
+response looks like an empty body or an AWS WAF challenge.
+
+From many datacenter or VPN IPs, IMDb may still return empty bodies or
+challenge pages. In that case you can:
+
+- Pass extra **`headers`** (for example a `Cookie` header from a real browser
+  session) or **`httpx_kwargs`** to **`get_title`**, **`get_title_async`**,
+  **`search_titles`**, and the various **`set_*`** helpers. Those keyword
+  arguments are forwarded into curl_cffi (see its docs for **`proxy`** /
+  **`proxies`**, timeouts, and **`impersonate`**).
+- Install a custom client with **`fetch_impl`** / **`fetch_async_impl`** (below)
+  so pages are loaded with a real browser or another stack you control.
+
+## Pluggable fetch (browser automation)
+
+The default module client is a **`cinemagoerng.web.HTTPClient`**. You can
+replace it globally with **`cinemagoerng.web.set_default_http_client`**, or keep
+separate instances if you build your own wiring.
+
+Custom hooks receive **`(url, merged_headers, httpx_kwargs)`** and must return
+the response body as a **`str`**. The library merges browser-like headers for
+`www.imdb.com` HTML requests, then validates title/reference pages the same way
+as the built-in path (empty or WAF-style HTML still raises a clear error).
+
+Sync-only hook (async **`get_title_async`** will run the sync hook in a
+thread pool):
+
+```python
+from cinemagoerng.web import HTTPClient, set_default_http_client
+
+def fetch_impl(url, headers, httpx_kwargs):
+    # Example: use Playwright, requests with rotating proxies, etc.
+    # return page_html_string
+    ...
+
+set_default_http_client(HTTPClient(fetch_impl=fetch_impl))
+```
+
+Optional dedicated async hook:
+
+```python
+async def fetch_async_impl(url, headers, httpx_kwargs):
+    ...
+
+client = HTTPClient(fetch_async_impl=fetch_async_impl)
+set_default_http_client(client)
+```
+
 ## Development
 
 It is recommended to use `uv` for development:

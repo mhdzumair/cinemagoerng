@@ -20,7 +20,7 @@ import textwrap
 from argparse import ArgumentParser
 from http import HTTPStatus
 
-import httpx
+from curl_cffi import requests as curl_requests
 
 from cinemagoerng import web as imdb
 
@@ -32,7 +32,7 @@ _LINE_WIDTH = 72
 def get_title(imdb_num: int, taglines: bool = False) -> None:
     try:
         item = imdb.get_title(f"tt{imdb_num:07d}")
-    except httpx.HTTPStatusError as e:
+    except curl_requests.exceptions.HTTPError as e:
         if e.response.status_code == HTTPStatus.NOT_FOUND:
             print("No title with this IMDb number was found.")
         sys.exit()

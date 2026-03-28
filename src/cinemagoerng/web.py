@@ -14,22 +14,64 @@
 # You should have received a copy of the GNU General Public License
 # along with CinemagoerNG.  If not, see <https://www.gnu.org/licenses/>.
 
+import asyncio
 import json
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache, partial
 from pathlib import Path
-from typing import Any, Mapping, NotRequired, TypedDict
+from typing import Any, Awaitable, Callable, Mapping, NotRequired, TypedDict
 from urllib.parse import quote, urlencode
 
-import httpx
+from curl_cffi import requests as curl_requests
+from curl_cffi.requests import AsyncSession
 
 from . import model, piculet, registry
 
 
-_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Firefox/102.0"
+# Browser-like defaults reduce empty 202 responses on www.imdb.com HTML.
+_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 _DEFAULT_TIMEOUT = 30.0
+# TLS/JA3 fingerprint impersonation (see curl_cffi docs for other targets).
+_CURL_IMPERSONATE = "chrome131"
+# Extra profiles to try on www.imdb.com HTML when the first impersonate fails
+# validation (empty body / WAF). Set to () to disable. Order: user override,
+# then this chain (deduplicated).
+_IMDB_IMPERSONATE_FALLBACKS: tuple[str, ...] = (
+    "chrome131",
+    "chrome124",
+    "chrome120",
+    "chrome110",
+    "safari17_0",
+    "safari15_5",
+)
 _SUGGESTION_BASE_URL = "https://v3.sg.media-imdb.com/suggestion"
+
+# (url, merged_request_headers, per_request_extra) -> response body text.
+HTTPFetchCallable = Callable[
+    [str, dict[str, str], dict[str, Any] | None],
+    str,
+]
+HTTPFetchAsyncCallable = Callable[
+    [str, dict[str, str], dict[str, Any] | None],
+    Awaitable[str],
+]
+
+_IMDB_WWW_HTML_DEFAULT_HEADERS: dict[str, str] = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
 
 _SUGGESTION_TYPE_MAP = {
     "feature": "movie",
@@ -50,26 +92,111 @@ _SUGGESTION_TYPE_MAP = {
 }
 
 
+def _is_imdb_www_html_url(url: str) -> bool:
+    """IMDb title/tag HTML on www; not GraphQL or suggestion JSON hosts."""
+    return "www.imdb.com" in url and "graphql" not in url
+
+
+def _validate_imdb_www_html_response(url: str, text: str) -> None:
+    """
+    Raise a clear error when IMDb blocks automation (empty body or WAF page).
+
+    Browsers still work because of TLS fingerprinting, cookies, and
+    residential IPs; datacenter scrapers often get empty 202 bodies or a WAF
+    challenge page.
+    """
+    if not _is_imdb_www_html_url(url):
+        return
+    # /find/ search HTML is best-effort; WAF is common — let the parser fail
+    # downstream instead of aborting before scrape.
+    if "/find/" in url:
+        return
+    if not text or not text.strip():
+        raise RuntimeError(
+            "IMDb returned an empty response body for "
+            f"{url!r}. This usually means the request was blocked as a bot "
+            "(common from datacenter IPs). If the title opens in a browser, "
+            "try a residential proxy, browser cookies, or pass custom headers "
+            "via get_title(..., headers=...) / httpx_kwargs (curl_cffi)."
+        )
+    if "gokuProps" in text and "__NEXT_DATA__" not in text:
+        raise RuntimeError(
+            "IMDb returned an AWS WAF challenge page instead of real HTML for "
+            f"{url!r}. Plain HTTP clients cannot pass this; use a browser "
+            "session (cookies), a proxy, or an undetected/automation stack."
+        )
+
+
 class HTTPClient:
-    """HTTP client with sync and async support."""
+    """HTTP client (curl_cffi): browser TLS + optional impersonation retries.
+
+    When IMDb returns an empty body or WAF HTML on www.imdb.com title/tag
+    pages, the client retries the same URL with additional ``impersonate``
+    targets (see ``_IMDB_IMPERSONATE_FALLBACKS``). That does not replace a
+    residential IP or cookies, but it often helps when one fingerprint is
+    blocked.
+
+    For Playwright or other automation, pass ``fetch_impl`` (sync) and
+    optionally ``fetch_async_impl`` (async). Hooks receive the final merged
+    ``headers`` and the same ``httpx_kwargs`` dict passed into ``get_title`` /
+    ``search_titles`` (e.g. ``proxy`` / curl_cffi options). Install app-wide
+    with :func:`set_default_http_client`.
+
+    Other effective approaches (caller supplies via ``headers`` /
+    ``httpx_kwargs``): ``Cookie`` from a real session, ``proxies`` (curl_cffi
+    accepts the same style as Requests), or a wrapper that drives Playwright
+    and returns HTML strings.
+    """
 
     def __init__(
         self,
         timeout: float = _DEFAULT_TIMEOUT,
         headers: dict[str, str] | None = None,
+        *,
+        fetch_impl: HTTPFetchCallable | None = None,
+        fetch_async_impl: HTTPFetchAsyncCallable | None = None,
     ):
         self.timeout = timeout
         self.headers = {"User-Agent": _USER_AGENT}
         if headers:
             self.headers.update(headers)
+        self._fetch_impl = fetch_impl
+        self._fetch_async_impl = fetch_async_impl
 
     def _get_headers(self, url: str, extra: dict[str, str] | None) -> dict:
         headers = self.headers.copy()
         if extra:
             headers.update(extra)
+        if _is_imdb_www_html_url(url):
+            for key, value in _IMDB_WWW_HTML_DEFAULT_HEADERS.items():
+                headers.setdefault(key, value)
         if "graphql" in url:
             headers["Content-Type"] = "application/json"
         return headers
+
+    def _curl_request_kwargs(
+        self,
+        httpx_kwargs: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any], str]:
+        """Build per-request kwargs and primary impersonate (httpx-compat)."""
+        merged: dict[str, Any] = dict(httpx_kwargs) if httpx_kwargs else {}
+        impersonate = merged.pop("impersonate", _CURL_IMPERSONATE)
+        req_kwargs: dict[str, Any] = {
+            "timeout": self.timeout,
+            "allow_redirects": True,
+        }
+        req_kwargs.update(merged)
+        if "follow_redirects" in req_kwargs:
+            req_kwargs["allow_redirects"] = req_kwargs.pop(
+                "follow_redirects"
+            )
+        return req_kwargs, impersonate
+
+    @staticmethod
+    def _impersonate_chain(primary: str) -> list[str]:
+        return list(
+            dict.fromkeys((primary, *_IMDB_IMPERSONATE_FALLBACKS))
+        )
 
     def fetch(
         self,
@@ -78,16 +205,36 @@ class HTTPClient:
         httpx_kwargs: dict[str, Any] | None = None,
     ) -> str:
         """Fetch URL synchronously."""
-        kwargs: dict[str, Any] = {
-            "timeout": self.timeout,
-            "follow_redirects": True,
-        }
-        if httpx_kwargs:
-            kwargs.update(httpx_kwargs)
-        with httpx.Client(**kwargs) as client:
-            response = client.get(url, headers=self._get_headers(url, headers))
-            response.raise_for_status()
-            return response.text
+        merged_headers = self._get_headers(url, headers)
+        if self._fetch_impl is not None:
+            text = self._fetch_impl(url, merged_headers, httpx_kwargs)
+            _validate_imdb_www_html_response(url, text)
+            return text
+
+        req_kwargs, primary_imp = self._curl_request_kwargs(httpx_kwargs)
+        last_exc: BaseException | None = None
+        for imp in self._impersonate_chain(primary_imp):
+            try:
+                response = curl_requests.get(
+                    url,
+                    headers=merged_headers,
+                    impersonate=imp,
+                    **req_kwargs,
+                )
+                response.raise_for_status()
+                text = response.text
+                try:
+                    _validate_imdb_www_html_response(url, text)
+                except RuntimeError as exc:
+                    last_exc = exc
+                    continue
+                return text
+            except curl_requests.exceptions.RequestException as exc:
+                last_exc = exc
+                continue
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"IMDb fetch failed for {url!r} after retries.")
 
     async def fetch_async(
         self,
@@ -96,21 +243,57 @@ class HTTPClient:
         httpx_kwargs: dict[str, Any] | None = None,
     ) -> str:
         """Fetch URL asynchronously."""
-        kwargs: dict[str, Any] = {
-            "timeout": self.timeout,
-            "follow_redirects": True,
-        }
-        if httpx_kwargs:
-            kwargs.update(httpx_kwargs)
-        async with httpx.AsyncClient(**kwargs) as client:
-            response = await client.get(
-                url, headers=self._get_headers(url, headers)
+        merged_headers = self._get_headers(url, headers)
+        if self._fetch_async_impl is not None:
+            text = await self._fetch_async_impl(
+                url, merged_headers, httpx_kwargs
             )
-            response.raise_for_status()
-            return response.text
+            _validate_imdb_www_html_response(url, text)
+            return text
+        if self._fetch_impl is not None:
+            text = await asyncio.to_thread(
+                self._fetch_impl,
+                url,
+                merged_headers,
+                httpx_kwargs,
+            )
+            _validate_imdb_www_html_response(url, text)
+            return text
+
+        req_kwargs, primary_imp = self._curl_request_kwargs(httpx_kwargs)
+        last_exc: BaseException | None = None
+        async with AsyncSession() as session:
+            for imp in self._impersonate_chain(primary_imp):
+                try:
+                    response = await session.get(
+                        url,
+                        headers=merged_headers,
+                        impersonate=imp,
+                        **req_kwargs,
+                    )
+                    response.raise_for_status()
+                    text = response.text
+                    try:
+                        _validate_imdb_www_html_response(url, text)
+                    except RuntimeError as exc:
+                        last_exc = exc
+                        continue
+                    return text
+                except curl_requests.exceptions.RequestException as exc:
+                    last_exc = exc
+                    continue
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"IMDb fetch failed for {url!r} after retries.")
 
 
 _http_client = HTTPClient()
+
+
+def set_default_http_client(client: HTTPClient) -> None:
+    """Use *client* for all library HTTP (get_title, search, GraphQL, …)."""
+    global _http_client
+    _http_client = client
 
 
 class GraphQLVariables(TypedDict):
@@ -531,7 +714,7 @@ def set_all_episodes(
         year_from: Optional start year to filter episodes
         year_to: Optional end year to filter episodes
         headers: Optional HTTP headers
-        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+        httpx_kwargs: Extra curl_cffi request kwargs (e.g. proxy, impersonate).
     """
     spec = _spec("title_episodes_with_pagination")
     after = ""
@@ -576,7 +759,7 @@ async def set_all_episodes_async(
         year_from: Optional start year to filter episodes
         year_to: Optional end year to filter episodes
         headers: Optional HTTP headers
-        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+        httpx_kwargs: Extra curl_cffi request kwargs (e.g. proxy, impersonate).
     """
     spec = _spec("title_episodes_with_pagination")
     after = ""
@@ -926,7 +1109,7 @@ def search_titles(
         total_count: Total number of items to fetch (when paginate=True)
         paginate: Whether to fetch all pages of results
         headers: Optional HTTP headers
-        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+        httpx_kwargs: Extra curl_cffi request kwargs (e.g. proxy, impersonate).
 
     Returns:
         List of Title objects
@@ -941,7 +1124,7 @@ def search_titles(
         titles = _parse_search_results(
             _extract_suggestion_results(suggestion_data)
         )
-    except (httpx.HTTPError, ValueError):
+    except (curl_requests.exceptions.RequestException, ValueError):
         titles = _search_titles_via_html(query, headers, httpx_kwargs)
     titles = _apply_search_filters(titles, filters)
     titles = _apply_search_sort(titles, sort)
@@ -951,7 +1134,12 @@ def search_titles(
             titles = _search_titles_via_html(query, headers, httpx_kwargs)
             titles = _apply_search_filters(titles, filters)
             titles = _apply_search_sort(titles, sort)
-        except httpx.HTTPError:
+        except (
+            curl_requests.exceptions.RequestException,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             pass
 
     if not paginate:
@@ -985,7 +1173,7 @@ async def search_titles_async(
         total_count: Total number of items to fetch (when paginate=True)
         paginate: Whether to fetch all pages of results
         headers: Optional HTTP headers
-        httpx_kwargs: Optional httpx client kwargs (e.g., {"proxy": "..."})
+        httpx_kwargs: Extra curl_cffi request kwargs (e.g. proxy, impersonate).
 
     Returns:
         List of Title objects
@@ -1000,7 +1188,7 @@ async def search_titles_async(
         titles = _parse_search_results(
             _extract_suggestion_results(suggestion_data)
         )
-    except (httpx.HTTPError, ValueError):
+    except (curl_requests.exceptions.RequestException, ValueError):
         titles = await _search_titles_via_html_async(
             query, headers, httpx_kwargs
         )
@@ -1014,7 +1202,12 @@ async def search_titles_async(
             )
             titles = _apply_search_filters(titles, filters)
             titles = _apply_search_sort(titles, sort)
-        except httpx.HTTPError:
+        except (
+            curl_requests.exceptions.RequestException,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
             pass
 
     if not paginate:
