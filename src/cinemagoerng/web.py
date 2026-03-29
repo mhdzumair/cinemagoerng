@@ -134,14 +134,22 @@ def _validate_imdb_www_html_response(url: str, text: str) -> None:
         )
 
 
+def _imdb_www_html_is_waf_challenge(url: str, text: str) -> bool:
+    """True when *text* is IMDb's AWS WAF shell (not the real Next.js HTML)."""
+    if not _is_imdb_www_html_url(url) or "/find/" in url:
+        return False
+    return "gokuProps" in text and "__NEXT_DATA__" not in text
+
+
 class HTTPClient:
     """HTTP client (curl_cffi): browser TLS + optional impersonation retries.
 
-    When IMDb returns an empty body or WAF HTML on www.imdb.com title/tag
-    pages, the client retries the same URL with additional ``impersonate``
-    targets (see ``_IMDB_IMPERSONATE_FALLBACKS``). That does not replace a
-    residential IP or cookies, but it often helps when one fingerprint is
-    blocked.
+    When IMDb returns an empty body or other non-WAF failures on www.imdb.com
+    title/tag pages, the client retries with additional ``impersonate``
+    targets (see ``_IMDB_IMPERSONATE_FALLBACKS``). AWS WAF challenge pages
+    (``gokuProps`` HTML without ``__NEXT_DATA__``) do not improve across
+    fingerprints for the same IP, so those stop after the first response and
+    callers can fall back to GraphQL or suggestion APIs quickly.
 
     For Playwright or other automation, pass ``fetch_impl`` (sync) and
     optionally ``fetch_async_impl`` (async). Hooks receive the final merged
@@ -236,6 +244,8 @@ class HTTPClient:
                     _validate_imdb_www_html_response(url, text)
                 except RuntimeError as exc:
                     last_exc = exc
+                    if _imdb_www_html_is_waf_challenge(url, text):
+                        break
                     continue
                 return text
             except curl_requests.exceptions.RequestException as exc:
@@ -286,6 +296,8 @@ class HTTPClient:
                         _validate_imdb_www_html_response(url, text)
                     except RuntimeError as exc:
                         last_exc = exc
+                        if _imdb_www_html_is_waf_challenge(url, text):
+                            break
                         continue
                     return text
                 except curl_requests.exceptions.RequestException as exc:
@@ -425,8 +437,9 @@ async def _scrape_async(
     return spec.scrape(document, doctype=spec.doctype)
 
 
-# HTML specs tried in order for get_title / get_title_async (reference first).
-_TITLE_HTML_SPEC_ORDER: tuple[str, ...] = ("title_reference", "title_primary")
+# HTML specs for get_title / get_title_async: canonical page only (/reference/
+# omitted — same WAF surface, larger payload; GraphQL follows).
+_TITLE_HTML_SPEC_ORDER: tuple[str, ...] = ("title_primary",)
 
 _TITLE_GRAPHQL_ALL_TOPICS = "title_graphql_all_topics"
 _TITLE_GRAPHQL_STORYLINE = "title_graphql_storyline"
@@ -620,9 +633,9 @@ def get_title(
 ) -> model.Title:
     """Get title information synchronously.
 
-    Tries ``/title/{id}/reference/`` HTML, then canonical ``/title/{id}/``,
-    then IMDb caching GraphQL (``TitleAllTopics`` + ``Title_Storyline``),
-    then the suggestion JSON API (minimal cast/plot/credits).
+    Tries canonical ``/title/{id}/`` HTML, then IMDb caching GraphQL
+    (``TitleAllTopics`` + ``Title_Storyline``), then the suggestion JSON API
+    (minimal cast/plot/credits).
     """
     errors: list[Exception] = []
     context = {"imdb_id": imdb_id}
